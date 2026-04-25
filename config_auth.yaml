@@ -1,0 +1,24 @@
+cookie:
+  expiry_days: 30
+  key: idt_analyzer_secret_key_2024
+  name: idt_auth_cookie
+credentials:
+  usernames:
+    admin:
+      email: admin@thomsonreuters.com
+      name: Administrador
+      password: $2b$12$Pq.u8fWeyb7RluSgqAlheOCmDLh9hRNJTbzeJit36uvsfJH6M6I3m
+      role: admin
+    consultor1:
+      email: consultor1@thomsonreuters.com
+      name: Consultor 1
+      password: $2b$12$RxjtPCXRaTZwCJNeH/ZP4eDeyB7TMSWf4F91xOYx2928lfyy23kG.
+      role: user
+    pm1:
+      email: pm1@thomsonreuters.com
+      name: Product Manager 1
+      password: $2b$12$1q41rinDECaimltsVSdKvOdS6PQ0UIz4Xq.MrP2FsdPpzr3Y7D1H2
+      role: user
+preauthorized:
+  emails:
+  - admin@thomsonreuters.com

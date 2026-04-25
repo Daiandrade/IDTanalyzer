@@ -51,7 +51,7 @@ Aderencia*.xlsx
 idt_history.db
 
 # Authentication config (contains hashed passwords)
-config_auth.yaml
+# config_auth.yaml  # Comentado para permitir deploy
 
 # Temporários
 explore_sheets.py
