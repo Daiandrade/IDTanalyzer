@@ -264,13 +264,7 @@ if authentication_status == False:
     st.stop()
 
 if authentication_status == None:
-    st.warning('⚠️ Por favor, faça login')
-    st.info("""
-    **Usuários de teste:**
-    - `admin` / `admin123`
-    - `pm1` / `pm123`
-    - `consultor1` / `cons123`
-    """)
+    st.warning('⚠️ Por favor, faça login para acessar o sistema')
     st.stop()
 
 # ── User logged in ────────────────────────────────────────────────────────────
