@@ -1285,9 +1285,13 @@ elif page == "▸ Configurações":
     st.markdown("---")
     st.markdown("### Gerenciar Dados")
 
-    if st.button("🗑️ Limpar histórico de análises"):
-        if st.checkbox("Confirmo que quero apagar todo o meu histórico"):
-            st.error("⚠️ Esta funcionalidade ainda não está implementada")
+    # Apenas admin pode limpar histórico
+    if user_role == 'admin':
+        if st.button("🗑️ Limpar histórico de análises"):
+            if st.checkbox("Confirmo que quero apagar todo o meu histórico"):
+                st.error("⚠️ Esta funcionalidade ainda não está implementada")
+    else:
+        st.info("💡 Apenas administradores podem gerenciar o histórico de análises.")
 
     st.markdown("---")
     st.markdown("### Sobre")
