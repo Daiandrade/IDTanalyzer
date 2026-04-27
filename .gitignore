@@ -46,6 +46,9 @@ Pre*.xlsm
 Aderencia*.xlsm
 Aderencia*.xlsx
 
+# EXCEÇÃO: Permitir base de aderência do sistema em produção
+!config/Aderencia.xlsm
+
 # Database
 *.db
 idt_history.db
