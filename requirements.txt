@@ -5,3 +5,7 @@ streamlit-authenticator>=0.3.0
 reportlab>=4.0.0
 matplotlib>=3.7.0
 Pillow>=10.0.0
+
+# Database - PostgreSQL support
+psycopg2-binary>=2.9.0
+sqlalchemy>=2.0.0
