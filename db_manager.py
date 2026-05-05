@@ -61,56 +61,76 @@ Session = sessionmaker(bind=engine)
 def init_db():
     """Create database tables if they don't exist"""
     # SQL compatível com PostgreSQL e SQLite
-    with engine.connect() as conn:
-        # Main analyses table
-        conn.execute(text("""
-            CREATE TABLE IF NOT EXISTS analyses (
-                id SERIAL PRIMARY KEY,
-                timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                usuario VARCHAR(100) NOT NULL,
-                cliente_nome TEXT,
-                cliente_segmento TEXT,
-                cliente_estados TEXT,
+    try:
+        with engine.connect() as conn:
+            # Main analyses table
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS analyses (
+                    id SERIAL PRIMARY KEY,
+                    timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    usuario VARCHAR(100) NOT NULL,
+                    cliente_nome TEXT,
+                    cliente_segmento TEXT,
+                    cliente_estados TEXT,
 
-                score_geral FLOAT,
-                score_ncm_compras FLOAT,
-                score_ncm_vendas FLOAT,
-                score_municipios FLOAT,
-                score_cfops FLOAT,
+                    score_geral FLOAT,
+                    score_ncm_compras FLOAT,
+                    score_ncm_vendas FLOAT,
+                    score_municipios FLOAT,
+                    score_cfops FLOAT,
 
-                total_ncm_compras INTEGER,
-                total_ncm_vendas INTEGER,
-                total_municipios INTEGER,
-                total_cfops INTEGER,
+                    total_ncm_compras INTEGER,
+                    total_ncm_vendas INTEGER,
+                    total_municipios INTEGER,
+                    total_cfops INTEGER,
 
-                gaps_compras INTEGER,
-                gaps_vendas INTEGER,
-                municipios_fora_escopo INTEGER,
-                cfops_nao_standard INTEGER,
+                    gaps_compras INTEGER,
+                    gaps_vendas INTEGER,
+                    municipios_fora_escopo INTEGER,
+                    cfops_nao_standard INTEGER,
 
-                resultado_json TEXT,
+                    resultado_json TEXT,
 
-                arquivo_prediag TEXT,
-                arquivo_aderencia TEXT
-            )
-        """))
+                    arquivo_prediag TEXT,
+                    arquivo_aderencia TEXT
+                )
+            """))
 
-        # Índices para PostgreSQL
-        if get_database_url().startswith('postgresql'):
-            try:
-                conn.execute(text("""
-                    CREATE INDEX IF NOT EXISTS idx_usuario ON analyses(usuario)
-                """))
-                conn.execute(text("""
-                    CREATE INDEX IF NOT EXISTS idx_timestamp ON analyses(timestamp DESC)
-                """))
-                conn.execute(text("""
-                    CREATE INDEX IF NOT EXISTS idx_cliente ON analyses(cliente_nome)
-                """))
-            except:
-                pass  # Índices podem já existir
+            # Índices para PostgreSQL
+            if get_database_url().startswith('postgresql'):
+                try:
+                    conn.execute(text("""
+                        CREATE INDEX IF NOT EXISTS idx_usuario ON analyses(usuario)
+                    """))
+                    conn.execute(text("""
+                        CREATE INDEX IF NOT EXISTS idx_timestamp ON analyses(timestamp DESC)
+                    """))
+                    conn.execute(text("""
+                        CREATE INDEX IF NOT EXISTS idx_cliente ON analyses(cliente_nome)
+                    """))
+                except:
+                    pass  # Índices podem já existir
 
-        conn.commit()
+            conn.commit()
+    except Exception as e:
+        db_url = get_database_url()
+        error_msg = f"""
+        ❌ ERRO DE CONEXÃO COM BANCO DE DADOS
+
+        Tipo de banco: {'PostgreSQL' if db_url.startswith('postgresql') else 'SQLite'}
+        URL: {db_url[:50]}...
+
+        Erro: {str(e)}
+
+        Se estiver usando PostgreSQL, verifique:
+        1. DATABASE_URL está configurado nos Secrets do Streamlit Cloud
+        2. Senha está correta (case-sensitive!)
+        3. Banco Supabase está ativo (não pausado)
+        4. URL tem ?sslmode=require no final
+        """
+        import streamlit as st
+        st.error(error_msg)
+        raise
 
 
 def save_analysis(
