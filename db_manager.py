@@ -210,7 +210,10 @@ def get_user_history(usuario: str, limit: int = 50) -> pd.DataFrame:
     """Get analysis history for a user"""
     init_db()
 
-    query = """
+    # Use text() with proper parameter binding for SQLAlchemy
+    from sqlalchemy import text
+
+    query = text("""
         SELECT
             id, timestamp, cliente_nome, cliente_segmento,
             score_geral, score_ncm_compras, score_ncm_vendas,
@@ -220,9 +223,14 @@ def get_user_history(usuario: str, limit: int = 50) -> pd.DataFrame:
         WHERE usuario = :usuario
         ORDER BY timestamp DESC
         LIMIT :limit
-    """
+    """)
 
-    df = pd.read_sql_query(query, engine, params={"usuario": usuario, "limit": limit})
+    with engine.connect() as conn:
+        result = conn.execute(query, {"usuario": usuario, "limit": limit})
+        rows = result.fetchall()
+        columns = result.keys()
+
+    df = pd.DataFrame(rows, columns=columns)
 
     if not df.empty:
         df["timestamp"] = pd.to_datetime(df["timestamp"])
@@ -234,16 +242,17 @@ def get_all_history(limit: int = 100) -> pd.DataFrame:
     """Get all analysis history (admin view)"""
     init_db()
 
-    query = """
+    # Use f-string for limit (safe, it's an integer)
+    query = f"""
         SELECT
             id, timestamp, usuario, cliente_nome, cliente_segmento,
             score_geral, gaps_compras, gaps_vendas, cfops_nao_standard
         FROM analyses
         ORDER BY timestamp DESC
-        LIMIT :limit
+        LIMIT {limit}
     """
 
-    df = pd.read_sql_query(query, engine, params={"limit": limit})
+    df = pd.read_sql_query(query, engine)
 
     if not df.empty:
         df["timestamp"] = pd.to_datetime(df["timestamp"])
