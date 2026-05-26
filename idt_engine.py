@@ -314,10 +314,18 @@ def load_adherence_base(path: Path) -> dict:
             uf = str(row.iloc[1]).strip().upper()  # Coluna B (índice 1)
             mun_c = str(row.iloc[2]).strip()  # Coluna C (índice 2) - Nome com acentos
             mun_d = str(row.iloc[3]).strip()  # Coluna D (índice 3) - Nome normalizado
-            aderencia = row.iloc[4] if len(row) > 4 else 0  # Coluna E (índice 4) - Aderencia
+            aderencia_raw = row.iloc[4] if len(row) > 4 else 0  # Coluna E (índice 4) - Aderencia
 
-            # CRÍTICO: Apenas municípios com Aderencia = 1 são considerados cobertos
-            if aderencia != 1:
+            # CRÍTICO: Apenas municípios com Aderencia cobertos
+            # Aceita tanto número (1) quanto texto ("Atendido", "Atentido", etc)
+            aderencia_str = normalize(str(aderencia_raw))
+            is_covered = (
+                aderencia_raw == 1 or  # Aceita número 1
+                "atend" in aderencia_str or  # Aceita "Atendido" (correto)
+                "atent" in aderencia_str  # Aceita "Atentido" (typo na base)
+            )
+
+            if not is_covered:
                 continue
 
             # Validações rigorosas
