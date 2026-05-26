@@ -855,6 +855,8 @@ def load_prediag(path: Path) -> dict:
 
     # ── Collect unique CFOPs ──
     cfops_declarados = set()
+
+    # REGRA 1: Coletar CFOPs das sheets de NCM Compras e Vendas (existente)
     if not ncm_compras.empty and "CFOP" in ncm_compras.columns:
         for cfop in ncm_compras["CFOP"].dropna():
             cfop_str = str(cfop).strip()
@@ -865,6 +867,67 @@ def load_prediag(path: Path) -> dict:
             cfop_str = str(cfop).strip()
             if cfop_str and cfop_str.lower() != "nan":
                 cfops_declarados.add(cfop_str)
+
+    # REGRA 2: Coletar CFOPs de uma sheet específica de CFOP (colunas A e C)
+    # Procura por sheet que contenha "CFOP" no nome
+    cfop_sheet = find_sheet_by_keywords(all_sheets, ["cfop"], SHEET_SYNONYMS, "CFOP")
+
+    if cfop_sheet:
+        try:
+            debug_print(f"[DEBUG] Processando sheet específica de CFOP: '{cfop_sheet}'")
+
+            # Ler sheet inteira sem header para procurar linha de dados
+            df_cfop_raw = pd.read_excel(path, sheet_name=cfop_sheet, engine="openpyxl", header=None)
+
+            # Procura linha de header (que contenha "CFOP" ou "Código")
+            header_row_cfop = None
+            for i in range(min(10, len(df_cfop_raw))):
+                row_text = ' '.join([normalize(str(v)) for v in df_cfop_raw.iloc[i].values if pd.notna(v)])
+                if 'cfop' in row_text or 'codigo' in row_text:
+                    header_row_cfop = i
+                    debug_print(f"[OK] Header de CFOP encontrado na linha {i}")
+                    break
+
+            # Se não encontrou header, assume que os dados começam na linha 0
+            if header_row_cfop is None:
+                header_row_cfop = 0
+                debug_print(f"[INFO] Header de CFOP não encontrado, assumindo dados começam na linha 0")
+
+            # Ler sheet com header ou a partir da primeira linha de dados
+            df_cfop = pd.read_excel(path, sheet_name=cfop_sheet, engine="openpyxl", header=header_row_cfop)
+
+            # IMPORTANTE: Usar colunas A (índice 0) e C (índice 2) como solicitado
+            # Coluna A = CFOP, Coluna C = Descrição (para referência)
+            if len(df_cfop.columns) >= 3:
+                col_a = df_cfop.iloc[:, 0]  # Coluna A (índice 0)
+                col_c = df_cfop.iloc[:, 2]  # Coluna C (índice 2)
+
+                debug_print(f"[INFO] Lendo CFOPs da sheet '{cfop_sheet}' - Coluna A (CFOP) e Coluna C (Descrição)")
+
+                # Extrair CFOPs da coluna A
+                for idx, cfop_value in enumerate(col_a):
+                    if pd.notna(cfop_value):
+                        cfop_str = str(cfop_value).strip()
+                        # Limpa CFOP (remove pontos, espaços, etc) e valida formato (4 dígitos)
+                        cfop_clean = re.sub(r'[^\d]', '', cfop_str)
+
+                        # Valida se é um CFOP válido (4 dígitos começando com 1-7)
+                        if cfop_clean and len(cfop_clean) == 4 and cfop_clean[0] in '1234567':
+                            cfops_declarados.add(cfop_clean)
+
+                            # Log para debug (primeiros 5 apenas)
+                            if len(cfops_declarados) <= 5:
+                                desc = str(col_c.iloc[idx]) if idx < len(col_c) and pd.notna(col_c.iloc[idx]) else ""
+                                debug_print(f"   - CFOP {cfop_clean}: {desc[:50]}")
+
+                debug_print(f"[OK] {len([c for c in cfops_declarados if len(c) == 4])} CFOPs adicionados da sheet específica")
+            else:
+                debug_print(f"[AVISO] Sheet '{cfop_sheet}' não tem pelo menos 3 colunas (A, B, C)")
+
+        except Exception as e:
+            debug_print(f"[AVISO] Erro ao processar sheet de CFOP '{cfop_sheet}': {e}")
+    else:
+        debug_print("[INFO] Nenhuma sheet específica de CFOP encontrada (isso é normal se CFOPs estão nas sheets de NCM)")
 
     return dict(
         general=general,
