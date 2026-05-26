@@ -1047,25 +1047,24 @@ def analyse_ncm_by_uf_summary(detail: list) -> dict:
 
 def analyse_municipios(client_mun_df: pd.DataFrame, covered_dict: dict) -> dict:
     """
-    Analisa municípios usando a coluna Status (se existir) ou verificando contra a lista de aderência.
+    Analisa municípios verificando SEMPRE contra a lista oficial de aderência (834 cidades).
 
-    Se o DataFrame tem coluna "Status":
-    - Usa o status do próprio arquivo ("Município Atendido" vs "Município Não Atendido")
+    IMPORTANTE: Ignora a coluna "Status" do arquivo do cliente.
+    A validação é feita APENAS contra a base oficial de municípios cobertos.
 
-    Se não tem coluna "Status":
-    - Verifica contra a lista de aderência (834 cidades)
+    Lógica:
+    - Normaliza o nome do município do cliente
+    - Verifica se (município_normalizado, UF) está na lista oficial
+    - Marca como coberto APENAS se estiver na lista de 834 cidades
 
     Retorna:
-    - in_scope: Municípios cobertos/atendidos
-    - out_of_scope: Municípios não cobertos
-    - score: % de municípios cobertos
-    - total: Quantidade total de municípios
+    - in_scope: Municípios cobertos (na lista oficial)
+    - out_of_scope: Municípios não cobertos (fora da lista oficial)
+    - score: % de municípios cobertos em relação ao total
+    - total: Quantidade total de municípios únicos
     """
     if client_mun_df.empty:
         return {"total": 0, "in_scope": [], "score": None}
-
-    # Verifica se tem coluna Status no arquivo
-    has_status_column = "Status" in client_mun_df.columns
 
     # Placeholders/headers comuns que devem ser ignorados
     PLACEHOLDERS = [
@@ -1118,15 +1117,10 @@ def analyse_municipios(client_mun_df: pd.DataFrame, covered_dict: dict) -> dict:
         if is_placeholder:
             continue
 
-        # Determina se o município está no escopo
-        if has_status_column:
-            # Usa a coluna Status do próprio arquivo
-            status = str(row.get("Status", "")).strip()
-            is_covered = "atendido" in normalize(status) and "nao" not in normalize(status) and "n�o" not in normalize(status)
-        else:
-            # Verifica se (municipio, UF) está na lista de aderência
-            lookup_key = (cidade_normalized, uf)
-            is_covered = lookup_key in covered_dict
+        # SEMPRE valida contra a lista oficial de aderência (834 municípios)
+        # Ignora coluna "Status" se existir - a fonte de verdade é a base oficial
+        lookup_key = (cidade_normalized, uf)
+        is_covered = lookup_key in covered_dict
 
         if is_covered:
             in_scope.append(f"{cidade} ({uf})")
