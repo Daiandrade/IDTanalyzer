@@ -1198,26 +1198,35 @@ def analyse_municipios(client_mun_df: pd.DataFrame, covered_dict: dict) -> dict:
     out_of_scope_unique = sorted(set(out_of_scope))
     invalid_unique = sorted(set(invalid))
 
-    # Calcular total de municípios únicos (cobertos + não cobertos + inválidos)
+    # Calcular totais baseados em LINHAS (volumetria)
+    total_linhas = len(detail)
+    linhas_atendidas = sum(1 for d in detail if d["Status"] == "Atendido")
+    linhas_nao_atendidas = sum(1 for d in detail if d["Status"] == "Não Atendido")
+    linhas_invalidas = sum(1 for d in detail if d["Status"] == "Município Não Válido")
+
+    # Calcular totais baseados em MUNICÍPIOS ÚNICOS (mantido para compatibilidade)
     total_municipios = len(in_scope_unique) + len(out_of_scope_unique) + len(invalid_unique)
 
-    # Se não houver nenhum município válido, não analisa
-    if total_municipios == 0:
+    # Se não houver nenhuma linha, não analisa
+    if total_linhas == 0:
         return {
             "total": 0,
+            "total_linhas": 0,
             "in_scope": [],
             "out_of_scope": [],
             "invalid": [],
             "covered": 0,
             "not_covered": 0,
             "invalid_count": 0,
+            "linhas_atendidas": 0,
+            "linhas_nao_atendidas": 0,
+            "linhas_invalidas": 0,
             "score": None,
             "detail": [],
         }
 
-    # Calcular score: % de municípios ATENDIDOS em relação ao TOTAL (incluindo inválidos)
-    # Score = (Atendidos / Total) × 100
-    score = round((len(in_scope_unique) / total_municipios) * 100.0, 2)
+    # NOVO: Score baseado em LINHAS (volumetria), não municípios únicos
+    score = round((linhas_atendidas / total_linhas) * 100.0, 2)
 
     # Ordena detail: não atendidos e inválidos primeiro, depois alfabético
     detail = sorted(
@@ -1226,6 +1235,13 @@ def analyse_municipios(client_mun_df: pd.DataFrame, covered_dict: dict) -> dict:
     )
 
     return {
+        # Totais baseados em LINHAS (volumetria) - NOVO
+        "total_linhas": total_linhas,
+        "linhas_atendidas": linhas_atendidas,
+        "linhas_nao_atendidas": linhas_nao_atendidas,
+        "linhas_invalidas": linhas_invalidas,
+
+        # Totais baseados em MUNICÍPIOS ÚNICOS (mantido para compatibilidade)
         "total": total_municipios,
         "in_scope": in_scope_unique,
         "out_of_scope": out_of_scope_unique,
@@ -1233,8 +1249,10 @@ def analyse_municipios(client_mun_df: pd.DataFrame, covered_dict: dict) -> dict:
         "covered": len(in_scope_unique),
         "not_covered": len(out_of_scope_unique),
         "invalid_count": len(invalid_unique),
+
+        # Score por VOLUMETRIA
         "score": score,
-        "detail": detail,  # NOVO: lista completa com status por linha
+        "detail": detail,
     }
 
 

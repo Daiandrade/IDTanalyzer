@@ -400,8 +400,13 @@ def build_excel_report(result: dict) -> bytes:
             ["Score NCM Vendas (%)", result["ncm_vendas"].get("score")],
             ["Score Municípios (%)", result["municipios"].get("score")],
             ["Score CFOPs (%)", result.get("cfops", {}).get("score")],
-            ["Municípios cobertos (IDT)", len(result["municipios"].get("in_scope", []))],
-            ["Municípios não cobertos (fora do IDT)", len(result["municipios"].get("out_of_scope", []))],
+            ["Total de Linhas (Municípios)", result["municipios"].get("total_linhas", 0)],
+            ["Linhas Atendidas", result["municipios"].get("linhas_atendidas", 0)],
+            ["Linhas Não Atendidas", result["municipios"].get("linhas_nao_atendidas", 0)],
+            ["Linhas Inválidas (UF inválida)", result["municipios"].get("linhas_invalidas", 0)],
+            ["Municípios Únicos Cobertos (IDT)", len(result["municipios"].get("in_scope", []))],
+            ["Municípios Únicos Não Cobertos", len(result["municipios"].get("out_of_scope", []))],
+            ["Municípios Únicos Inválidos", len(result["municipios"].get("invalid", []))],
             ["CFOPs não-standard (alertas)", len(result.get("cfops", {}).get("alertas", []))],
         ]
         pd.DataFrame(summary_rows, columns=["Dimensão", "Valor"]).to_excel(
@@ -637,21 +642,54 @@ if page == "▸ Nova Análise":
         with tab_mun:
             m = result["municipios"]
 
+            # ── SCORE PRINCIPAL ──
             if m.get("score") is not None:
-                st.markdown(f"### Score: {m['score']:.2f}% (baseado em municípios únicos)")
+                st.markdown(f"### Score: {m['score']:.2f}% (baseado em volumetria de linhas)")
 
-            col1, col2, col3 = st.columns(3)
+            # ── MÉTRICAS POR VOLUMETRIA (LINHAS) ──
+            st.markdown("#### 📊 Volumetria (Linhas)")
+            col1, col2, col3, col4 = st.columns(4)
             with col1:
-                st.metric("📊 Municípios Únicos", m.get("total", 0))
+                st.metric("📋 Total de Linhas", m.get("total_linhas", 0))
             with col2:
-                st.metric("✅ Únicos Cobertos", m.get("covered", 0))
+                st.metric("✅ Atendidas", m.get("linhas_atendidas", 0))
             with col3:
-                st.metric("⚠️ Únicos Não Cobertos", m.get("not_covered", 0))
+                st.metric("❌ Não Atendidas", m.get("linhas_nao_atendidas", 0))
+            with col4:
+                st.metric("⚠️ Inválidas", m.get("linhas_invalidas", 0),
+                          help="Municípios com UF inválida (ex: 'NI')")
+
+            # ── MÉTRICAS POR MUNICÍPIOS ÚNICOS ──
+            st.markdown("#### 🏙️ Municípios Únicos")
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.metric("Total Únicos", m.get("total", 0))
+            with col2:
+                st.metric("Atendidos", m.get("covered", 0))
+            with col3:
+                st.metric("Não Atendidos", m.get("not_covered", 0))
+            with col4:
+                st.metric("Inválidos", m.get("invalid_count", 0))
 
             detail = m.get("detail", [])
             total_unicos = m.get("total", 0)
+            total_linhas = m.get("total_linhas", 0)
+            invalid_count = m.get("invalid_count", 0)
+            linhas_inv = m.get("linhas_invalidas", 0)
 
-            st.info(f"ℹ️ Lista completa de TODAS as {len(detail)} linhas do pré-diagnóstico ({total_unicos} municípios únicos) — cada linha marcada como Atendido ou Não Atendido pela lista oficial de aderência do IDT.")
+            # Aviso se houver municípios inválidos
+            if invalid_count > 0:
+                pct = round((linhas_inv / total_linhas * 100), 1) if total_linhas else 0
+                st.warning(
+                    f"⚠️ **{linhas_inv} linhas ({pct}%)** possuem UF inválida ou não informada. "
+                    f"Recomenda-se revisar o arquivo Excel para corrigir estas UFs."
+                )
+
+            st.info(
+                f"ℹ️ Análise de **{total_linhas}** linhas do pré-diagnóstico "
+                f"(**{total_unicos}** municípios únicos). "
+                f"Score = (Linhas Atendidas / Total de Linhas) × 100"
+            )
 
             if detail:
                 # Monta DataFrame estilo NCM
@@ -672,8 +710,8 @@ if page == "▸ Nova Análise":
                 with f1:
                     filtro_status = st.multiselect(
                         "Filtrar por status",
-                        options=["Atendido", "Não Atendido"],
-                        default=["Atendido", "Não Atendido"],
+                        options=["Atendido", "Não Atendido", "Município Não Válido"],
+                        default=["Atendido", "Não Atendido", "Município Não Válido"],
                         key="mun_filtro_status",
                     )
                 with f2:
@@ -690,7 +728,7 @@ if page == "▸ Nova Análise":
                     df_mun["UF"].isin(filtro_uf)
                 ]
 
-                st.markdown(f"**Exibindo {len(df_filtrado)} de {len(df_mun)} municípios**")
+                st.markdown(f"**Exibindo {len(df_filtrado)} de {len(df_mun)} linhas**")
                 st.dataframe(
                     df_filtrado,
                     use_container_width=True,
