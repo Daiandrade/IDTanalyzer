@@ -437,12 +437,27 @@ def build_excel_report(result: dict) -> bytes:
 
         # ── Municípios ──
         m = result["municipios"]
-        mun_rows = (
-            [{"Município": c, "Status": "✅ Coberto pelo IDT"} for c in m.get("in_scope", [])] +
-            [{"Município": c, "Status": "⚠️ Não coberto (fora da lista IDT)"} for c in m.get("out_of_scope", [])]
-        )
-        if mun_rows:
-            pd.DataFrame(mun_rows).to_excel(writer, sheet_name="Municípios ISS", index=False)
+        detail = m.get("detail", [])
+        if detail:
+            mun_rows = [
+                {
+                    "Município": r.get("Cidade", ""),
+                    "UF": r.get("UF", ""),
+                    "Status": r.get("Status", ""),
+                    "Modo de Match": r.get("Modo_Match") or "-",
+                    "Similaridade": r.get("Similaridade") if r.get("Similaridade") is not None else "-",
+                }
+                for r in detail
+            ]
+            pd.DataFrame(mun_rows).to_excel(writer, sheet_name="Municípios", index=False)
+        else:
+            # Fallback para formato legado
+            mun_rows = (
+                [{"Município": c, "Status": "Atendido"} for c in m.get("in_scope", [])] +
+                [{"Município": c, "Status": "Não Atendido"} for c in m.get("out_of_scope", [])]
+            )
+            if mun_rows:
+                pd.DataFrame(mun_rows).to_excel(writer, sheet_name="Municípios", index=False)
 
         # ── CFOPs ──
         cfop = result.get("cfops", {})
@@ -569,7 +584,7 @@ if page == "▸ Nova Análise":
         c1, c2, c3, c4 = st.columns(4)
         with c1:
             ov = result["overall_score"]
-            st.metric("Score Geral", score_label(ov), help="Média ponderada: NCM Compras (35%), NCM Vendas (35%), Municípios (30%)")
+            st.metric("Score Geral", score_label(ov), help="Média ponderada: NCM Compras (35%), NCM Vendas (35%), Municípios únicos (30%)")
         with c2:
             sc = result["ncm_compras"].get("score")
             st.metric("NCM Compras", score_label(sc))
@@ -622,50 +637,80 @@ if page == "▸ Nova Análise":
         with tab_mun:
             m = result["municipios"]
 
-            # Mostrar score se disponível
             if m.get("score") is not None:
-                st.markdown(f"### Score: {m['score']:.2f}%")
+                st.markdown(f"### Score: {m['score']:.2f}% (baseado em municípios únicos)")
 
-            # Estatísticas de municípios
             col1, col2, col3 = st.columns(3)
             with col1:
-                st.metric("📊 Total de Municípios", m.get("total", 0))
+                st.metric("📊 Municípios Únicos", m.get("total", 0))
             with col2:
-                st.metric("✅ Cobertos (IDT)", m.get("covered", len(m.get("in_scope", []))))
+                st.metric("✅ Únicos Cobertos", m.get("covered", 0))
             with col3:
-                st.metric("⚠️ Não Cobertos", m.get("not_covered", len(m.get("out_of_scope", []))))
+                st.metric("⚠️ Únicos Não Cobertos", m.get("not_covered", 0))
 
-            # Info sobre a análise
-            st.info("ℹ️ O score reflete a porcentagem de municípios do pré-diagnóstico que estão cobertos pela lista de aderência do IDT.")
+            detail = m.get("detail", [])
+            total_unicos = m.get("total", 0)
 
-            # Municípios cobertos
-            if m.get("in_scope"):
+            st.info(f"ℹ️ Lista completa de TODAS as {len(detail)} linhas do pré-diagnóstico ({total_unicos} municípios únicos) — cada linha marcada como Atendido ou Não Atendido pela lista oficial de aderência do IDT.")
+
+            if detail:
+                # Monta DataFrame estilo NCM
+                rows = []
+                for r in detail:
+                    rows.append({
+                        "Município": r.get("Cidade", ""),
+                        "UF": r.get("UF", ""),
+                        "Status": r.get("Status", ""),
+                        "Modo de Match": r.get("Modo_Match") or "-",
+                        "Similaridade": r.get("Similaridade") if r.get("Similaridade") is not None else "-",
+                    })
+                df_mun = pd.DataFrame(rows)
+
+                # Filtros interativos
                 st.markdown("---")
-                st.markdown(f"**✅ Municípios do pré-diagnóstico que estão cobertos**: {len(m['in_scope'])} município(s)")
+                f1, f2 = st.columns([3, 2])
+                with f1:
+                    filtro_status = st.multiselect(
+                        "Filtrar por status",
+                        options=["Atendido", "Não Atendido"],
+                        default=["Atendido", "Não Atendido"],
+                        key="mun_filtro_status",
+                    )
+                with f2:
+                    ufs_disponiveis = sorted(df_mun["UF"].unique().tolist())
+                    filtro_uf = st.multiselect(
+                        "Filtrar por UF",
+                        options=ufs_disponiveis,
+                        default=ufs_disponiveis,
+                        key="mun_filtro_uf",
+                    )
 
-                # Tags visuais
-                html_tags = " ".join(
-                    f'<span class="in-tag">{c}</span>' for c in m["in_scope"])
-                st.markdown(html_tags, unsafe_allow_html=True)
+                df_filtrado = df_mun[
+                    df_mun["Status"].isin(filtro_status) &
+                    df_mun["UF"].isin(filtro_uf)
+                ]
 
-                # Lista detalhada em expander
-                with st.expander(f"📋 Ver lista completa ({len(m['in_scope'])} municípios)"):
-                    st.markdown("**Lista completa de municípios cobertos:**")
-                    for i, mun in enumerate(m["in_scope"], 1):
-                        st.write(f"{i}. {mun}")
+                st.markdown(f"**Exibindo {len(df_filtrado)} de {len(df_mun)} municípios**")
+                st.dataframe(
+                    df_filtrado,
+                    use_container_width=True,
+                    hide_index=True,
+                    height=min(600, 40 + 35 * min(len(df_filtrado), 15)),
+                )
+
+                # Avisos sobre matches via fuzzy (similaridade < 1.0)
+                fuzzy = m.get("fuzzy_matches", [])
+                if fuzzy:
+                    with st.expander(f"🔍 Matches por similaridade ({len(fuzzy)})"):
+                        st.caption("Estas cidades casaram com a base via aproximação (acentuação/typos). Revise se o match está correto.")
+                        df_fuzzy = pd.DataFrame(fuzzy)
+                        st.dataframe(df_fuzzy, use_container_width=True, hide_index=True)
             else:
-                st.warning("⚠️ Nenhum município informado no pré-diagnóstico está na lista de cobertura do IDT.")
-
-            # Municípios não cobertos
-            if m.get("out_of_scope"):
-                st.markdown("---")
-                st.markdown(f"**⚠️ Municípios do pré-diagnóstico NÃO cobertos pelo IDT**: {len(m['out_of_scope'])} município(s)")
-                st.caption("Estes municípios NÃO fazem parte da lista de aderência do IDT (Aderencia = 0) e impactam negativamente o score.")
-
-                with st.expander(f"📋 Ver municípios não cobertos ({len(m['out_of_scope'])} municípios)"):
-                    st.markdown("**Lista de municípios não cobertos:**")
-                    for i, mun in enumerate(m["out_of_scope"], 1):
-                        st.write(f"{i}. {mun}")
+                st.warning("⚠️ Nenhum município do pré-diagnóstico foi extraído ou todos foram filtrados como inválidos.")
+                diag = m.get("diagnostico", {})
+                if diag:
+                    with st.expander("📊 Diagnóstico — onde os municípios foram perdidos"):
+                        st.json(diag)
 
         with tab_cfop:
             cfop = result.get("cfops", {})
