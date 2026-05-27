@@ -9,13 +9,12 @@ NCM cross-reference rules:
   - Sales      : UF = UF_Cliente   (customer/origin state)
 
 Coverage score = % of NCM×UF combinations where cell value > 0 (1 for Pharma, 100 for Chemical)
-Partial coverage ->consolidated score + list of UFs with gap
-Municipalities   ->compare against 834-city list; flag out-of-scope ones
+Partial coverage → consolidated score + list of UFs with gap
+Municipalities   → compare against 834-city list; flag out-of-scope ones
 """
 
 import re
 import unicodedata
-import difflib
 import pandas as pd
 from pathlib import Path
 
@@ -38,7 +37,7 @@ UF_COLS = [
 ]
 
 SECTOR_MAP = {
-    # keywords from "segmento" field ->(inbound_sheet, outbound_sheet)
+    # keywords from "segmento" field → (inbound_sheet, outbound_sheet)
     "quim":    ("Chemical - Inbound", "Chemical - Oubound"),
     "farm":    ("Pharma - Inbound",   "Pharma -  Outbound"),
     "agro":    ("AWR",                "AWR"),
@@ -72,104 +71,6 @@ SHEET_SYNONYMS = {
 def normalize(s: str) -> str:
     s = str(s).lower().strip()
     return unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode()
-
-
-# Caracteres de substituição (encoding corrompido: ô ->�, ã ->�, etc.)
-_REPLACEMENT_CHARS = "�﻿\x00"
-
-# Mapeamento heurístico para tentar recuperar caracteres corrompidos comuns
-# em nomes de municípios brasileiros. Chave: padrão na string corrompida (lowercase, sem acentos)
-# Valor: caractere de substituição para o "�"
-_CORRUPTION_HINTS = {
-    # São ->S�o
-    "s�o ": "a",
-    # não ->n�o
-    "n�o ": "a",
-    # Rondônia, Goiânia, Espírito ->letras intermediárias
-}
-
-# Stopwords curtas que costumam variar entre versões do mesmo município
-# (ex.: "São Paulo do Sul" vs "Sao Paulo Sul"). Usado APENAS na chave secundária.
-_CITY_STOPWORDS = {"de", "do", "da", "dos", "das", "e"}
-
-
-def normalize_city(s: str) -> str:
-    """
-    Normalização robusta para nomes de municípios.
-
-    Trata:
-      - Acentos (NFKD)
-      - Caractere de substituição U+FFFD (encoding corrompido) ->tratado como letra vazia
-      - Pontuação (apóstrofos, hífens, pontos, vírgulas) ->vira espaço
-      - Múltiplos espaços ->um espaço
-      - Lowercase + strip
-
-    Exemplos:
-      "São Paulo"            ->"sao paulo"
-      "S�o Paulo"            ->"so paulo"   (degradado, mas comparável via fuzzy)
-      "Alta Floresta D'Oeste"→ "alta floresta d oeste"
-      "Mogi-Mirim"           ->"mogi mirim"
-      "Espírito Santo"       ->"espirito santo"
-    """
-    if s is None:
-        return ""
-    s = str(s).strip()
-    if not s or s.lower() == "nan":
-        return ""
-
-    # Remove caracteres de controle/replacement ->vira espaço
-    for ch in _REPLACEMENT_CHARS:
-        s = s.replace(ch, " ")
-
-    # Lowercase + remove acentos via NFKD
-    s = unicodedata.normalize("NFKD", s.lower())
-    s = s.encode("ascii", "ignore").decode("ascii")
-
-    # Substitui qualquer pontuação por espaço (apóstrofos, hífens, pontos, etc.)
-    s = re.sub(r"[^a-z0-9 ]+", " ", s)
-
-    # Colapsa múltiplos espaços
-    s = re.sub(r"\s+", " ", s).strip()
-
-    return s
-
-
-def normalize_city_key(s: str) -> str:
-    """
-    Chave secundária mais agressiva: remove também stopwords ("de", "do", "da"...)
-    e espaços, para casar variações como "São Paulo do Sul" vs "Sao Paulo Sul".
-
-    Retorna string vazia se a entrada for inválida.
-    """
-    base = normalize_city(s)
-    if not base:
-        return ""
-    tokens = [t for t in base.split() if t not in _CITY_STOPWORDS]
-    return "".join(tokens)
-
-
-def best_fuzzy_match(name: str, candidates: list, threshold: float = 0.88):
-    """
-    Encontra o melhor candidato similar a `name` dentro de `candidates`.
-
-    Args:
-        name: nome já normalizado (via normalize_city)
-        candidates: lista de nomes já normalizados
-        threshold: similaridade mínima (0.0 a 1.0) — 0.88 cobre erros de
-                   digitação típicos sem causar falsos positivos.
-
-    Returns:
-        (matched_name, similarity) ou (None, 0.0) se nenhum bater.
-    """
-    if not name or not candidates:
-        return None, 0.0
-
-    matches = difflib.get_close_matches(name, candidates, n=1, cutoff=threshold)
-    if not matches:
-        return None, 0.0
-
-    similarity = difflib.SequenceMatcher(None, name, matches[0]).ratio()
-    return matches[0], similarity
 
 
 def expand_all_ufs(df: pd.DataFrame, uf_column: str) -> pd.DataFrame:
@@ -330,12 +231,12 @@ def clean_ncm(v) -> str:
     Normaliza NCM para formato padronizado (apenas dígitos).
 
     Aceita múltiplos formatos:
-    - Com pontos: 3004.90.00 ->30049000
-    - Sem pontos: 30049000 ->30049000
-    - Com espaços: 3004 90 00 ->30049000
-    - Com hífen: 3004-90-00 ->30049000
-    - Com barra: 3004/90/00 ->30049000
-    - Formato HS: 3004.90 ->300490
+    - Com pontos: 3004.90.00 → 30049000
+    - Sem pontos: 30049000 → 30049000
+    - Com espaços: 3004 90 00 → 30049000
+    - Com hífen: 3004-90-00 → 30049000
+    - Com barra: 3004/90/00 → 30049000
+    - Formato HS: 3004.90 → 300490
 
     Returns: NCM apenas com dígitos
     """
@@ -406,32 +307,13 @@ def load_adherence_base(path: Path) -> dict:
             "RS", "RO", "RR", "SC", "SP", "SE", "TO"
         }
 
-        # Criar índice de municípios cobertos com 3 níveis de busca:
-        #   1. Match exato em chave primária  -> normalize_city(nome)
-        #   2. Match em chave secundária (sem stopwords) -> normalize_city_key(nome)
-        #   3. Fuzzy match (similaridade ≥ 0.88) por UF
-        #
-        # Estrutura:
-        #   municipios = {
-        #       "_primary": {(key_normalized, uf): display_name},
-        #       "_secondary": {(key_compacted, uf): display_name},
-        #       "_by_uf": {uf: [list of normalized names]},
-        #       (legado) (key, uf): True   -> mantido para compatibilidade
-        #   }
+        # Criar lookup de (municipio_normalizado, UF) → True
+        # APENAS para municípios com Aderencia = 1 (cobertos)
         municipios = {}
-        index_primary = {}
-        index_secondary = {}
-        # Mapeia QUALQUER chave (primária ou secundária) ->chave canônica única
-        # da linha da base, para evitar duplicatas quando a base tem 2 versões
-        # do mesmo nome (ex.: col C corrompida + col D ASCII).
-        index_primary_to_canonical = {}
-        index_secondary_to_canonical = {}
-        names_by_uf = {}
-
         for _, row in df_mun.iterrows():
             uf = str(row.iloc[1]).strip().upper()  # Coluna B (índice 1)
-            mun_c = str(row.iloc[2]).strip()  # Coluna C (índice 2) - Nome com acentos (pode estar corrompido)
-            mun_d = str(row.iloc[3]).strip()  # Coluna D (índice 3) - Nome ASCII (sem acentos)
+            mun_c = str(row.iloc[2]).strip()  # Coluna C (índice 2) - Nome com acentos
+            mun_d = str(row.iloc[3]).strip()  # Coluna D (índice 3) - Nome normalizado
             aderencia_raw = row.iloc[4] if len(row) > 4 else 0  # Coluna E (índice 4) - Aderencia
 
             # CRÍTICO: Apenas municípios com Aderencia cobertos
@@ -439,84 +321,31 @@ def load_adherence_base(path: Path) -> dict:
             aderencia_str = normalize(str(aderencia_raw))
             is_covered = (
                 aderencia_raw == 1 or  # Aceita número 1
-                aderencia_str == "atendido" or  # Aceita "Atendido" (correto)
-                aderencia_str == "atentido"  # Aceita "Atentido" (typo na base)
+                "atend" in aderencia_str or  # Aceita "Atendido" (correto)
+                "atent" in aderencia_str  # Aceita "Atentido" (typo na base)
             )
 
             if not is_covered:
                 continue
 
             # Validações rigorosas
+            if not mun_c or mun_c.lower() == 'nan' or len(mun_c) < 3:
+                continue
             if not uf or uf.lower() == 'nan' or uf not in VALID_UFS:
                 continue
 
-            # Escolha do nome de exibição (display_name):
-            #   - Se coluna C tem caracteres corrompidos (�), prefere coluna D
-            #   - Caso contrário, usa coluna C (com acentos originais)
-            c_corrupted = any(ch in mun_c for ch in _REPLACEMENT_CHARS)
-            c_valid = mun_c and mun_c.lower() != 'nan'
-            d_valid = mun_d and mun_d.lower() != 'nan'
+            # Normaliza e adiciona à lookup
+            mun_normalized = normalize(mun_c)
 
-            if c_valid and not c_corrupted:
-                display_name = mun_c
-            elif d_valid:
-                display_name = mun_d
-            elif c_valid:
-                display_name = mun_c
-            else:
-                continue
+            # Só adiciona se o nome normalizado for válido (mínimo 3 caracteres)
+            if len(mun_normalized) >= 3:
+                municipios[(mun_normalized, uf)] = True
 
-            # Montamos chaves a partir de AMBAS coluna C e D para máxima cobertura
-            sources = []
-            if d_valid:
-                sources.append(mun_d)  # prioridade: coluna D (ASCII limpo)
-            if c_valid and mun_c != mun_d:
-                sources.append(mun_c)
-
-            # Chave canônica do município: priorizamos a chave primária da coluna D
-            # (ASCII limpo, sem caracteres corrompidos). Se só temos coluna C, usamos ela.
-            canonical_key = None
-            for src in sources:
-                kp = normalize_city(src)
-                if len(kp) >= 3:
-                    canonical_key = kp
-                    break
-            if canonical_key is None:
-                continue
-
-            added_for_uf = set()
-            for src in sources:
-                key_primary = normalize_city(src)
-                if len(key_primary) < 3:
-                    continue
-
-                # Chave primária (com espaços, sem acentos/pontuação)
-                index_primary.setdefault((key_primary, uf), display_name)
-                # Mapeia QUALQUER variação primária ->chave canônica (única por linha)
-                index_primary_to_canonical.setdefault((key_primary, uf), canonical_key)
-
-                # Compatibilidade com código legado que faz `(key, uf) in municipios`
-                municipios[(key_primary, uf)] = True
-
-                # Chave secundária (sem stopwords e sem espaços)
-                key_secondary = normalize_city_key(src)
-                if len(key_secondary) >= 3:
-                    index_secondary.setdefault((key_secondary, uf), display_name)
-                    index_secondary_to_canonical.setdefault(
-                        (key_secondary, uf), canonical_key
-                    )
-
-                # Lista por UF para fuzzy match
-                if key_primary not in added_for_uf:
-                    names_by_uf.setdefault(uf, []).append(key_primary)
-                    added_for_uf.add(key_primary)
-
-        # Anexa índices auxiliares ao dict municipios (sem quebrar API existente)
-        municipios["_primary"] = index_primary
-        municipios["_secondary"] = index_secondary
-        municipios["_primary_to_canonical"] = index_primary_to_canonical
-        municipios["_secondary_to_canonical"] = index_secondary_to_canonical
-        municipios["_by_uf"] = names_by_uf
+            # Se a coluna D (normalizado) existir e for diferente da C, adiciona também
+            if mun_d and mun_d.lower() != 'nan' and mun_d != mun_c:
+                mun_d_normalized = normalize(mun_d)
+                if len(mun_d_normalized) >= 3:
+                    municipios[(mun_d_normalized, uf)] = True
 
         # ── Non-standard operations ──
         df_ns = pd.read_excel(path, sheet_name="Cfg_Operacoes_NaoStandard", engine="openpyxl", header=1)
@@ -636,7 +465,7 @@ def detect_sheet_content(df: pd.DataFrame) -> str:
     if 'ncm' in cols_text or 'codigo' in cols_text or 'commodity' in cols_text:
         if 'fornecedor' in cols_text or 'supplier' in cols_text or 'entrada' in cols_text:
             return 'ncm_compras'
-        # Se tem NCM e UF Cliente/Destino ->Vendas
+        # Se tem NCM e UF Cliente/Destino → Vendas
         if 'cliente' in cols_text or 'destino' in cols_text or 'saida' in cols_text:
             return 'ncm_vendas'
         # Se tem NCM mas não tem indicador claro, pode ser Compras (default)
@@ -644,261 +473,6 @@ def detect_sheet_content(df: pd.DataFrame) -> str:
             return 'ncm_compras'
 
     return None
-
-
-VALID_UFS_SET = {"AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA",
-                 "MT", "MS", "MG", "PA", "PB", "PR", "PE", "PI", "RJ", "RN",
-                 "RS", "RO", "RR", "SC", "SP", "SE", "TO"}
-
-# Mapeamento de nomes de estados (com/sem acento) para sigla UF
-UF_NAME_TO_CODE = {
-    "acre": "AC", "alagoas": "AL", "amapa": "AP", "amazonas": "AM",
-    "bahia": "BA", "ceara": "CE", "distrito federal": "DF", "espirito santo": "ES",
-    "goias": "GO", "maranhao": "MA", "mato grosso": "MT", "mato grosso do sul": "MS",
-    "minas gerais": "MG", "para": "PA", "paraiba": "PB", "parana": "PR",
-    "pernambuco": "PE", "piaui": "PI", "rio de janeiro": "RJ", "rio grande do norte": "RN",
-    "rio grande do sul": "RS", "rondonia": "RO", "roraima": "RR", "santa catarina": "SC",
-    "sao paulo": "SP", "sergipe": "SE", "tocantins": "TO",
-}
-
-
-def _normalize_uf(value) -> str:
-    """
-    Converte UF de qualquer formato para sigla de 2 letras.
-    Aceita: 'SP', 'sp', 'São Paulo', 'são paulo', 'SAO PAULO', '35' (código IBGE), etc.
-    Retorna '' se inválido.
-    """
-    if value is None:
-        return ""
-    s = str(value).strip()
-    if not s or s.lower() == "nan":
-        return ""
-
-    # Tentativa 1: já é sigla de 2 letras
-    up = s.upper()
-    if len(up) == 2 and up in VALID_UFS_SET:
-        return up
-
-    # Tentativa 2: nome do estado por extenso
-    normalized = normalize(s)  # lowercase + sem acentos
-    if normalized in UF_NAME_TO_CODE:
-        return UF_NAME_TO_CODE[normalized]
-
-    # Tentativa 3: extrair sigla de string composta tipo "SP - São Paulo" ou "São Paulo (SP)"
-    # Pega tokens de 2 letras maiúsculas
-    tokens_2letras = re.findall(r"\b([A-Z]{2})\b", s.upper())
-    for t in tokens_2letras:
-        if t in VALID_UFS_SET:
-            return t
-
-    return ""
-
-
-def _detect_city_column(df: pd.DataFrame, max_cols: int = 8) -> tuple:
-    """
-    Detecta heuristicamente quais colunas contêm UF e Cidade no DataFrame.
-
-    Estratégia (usa dados reais, não só o header):
-      - UF: coluna onde a maioria dos valores tem 2 letras E é sigla brasileira válida,
-            OU é nome de estado por extenso
-      - Cidade: coluna OUTRA que UF onde a maioria dos valores são strings com 3+ chars,
-                contendo letras (não puramente numérico)
-
-    Returns:
-        (uf_col_idx, cidade_col_idx) ou (None, None) se não conseguir detectar
-    """
-    if df.empty or len(df.columns) < 2:
-        return None, None
-
-    max_cols = min(max_cols, len(df.columns))
-    sample_size = min(50, len(df))  # examina até 50 linhas para evitar overhead
-    if sample_size == 0:
-        return None, None
-
-    sample = df.head(sample_size)
-
-    # Score cada coluna como candidato a UF / Cidade
-    scores_uf = []
-    scores_cidade = []
-    for j in range(max_cols):
-        col = sample.iloc[:, j]
-        valores_validos = 0
-        uf_validos = 0
-        cidade_validas = 0
-        for v in col:
-            if pd.isna(v):
-                continue
-            s = str(v).strip()
-            if not s or s.lower() == "nan":
-                continue
-            valores_validos += 1
-            if _normalize_uf(s):
-                uf_validos += 1
-            # Cidade: string com letras, 3+ chars, não puramente número
-            if len(s) >= 3 and re.search(r"[A-Za-zÀ-ÿ]", s) and not s.isdigit():
-                cidade_validas += 1
-
-        score_uf = uf_validos / valores_validos if valores_validos else 0
-        score_cidade = cidade_validas / valores_validos if valores_validos else 0
-        scores_uf.append((j, score_uf, valores_validos))
-        scores_cidade.append((j, score_cidade, valores_validos))
-
-    # UF: coluna com maior score_uf (precisa ser >= 0.5 para confiar)
-    scores_uf_sorted = sorted(scores_uf, key=lambda x: (-x[1], x[0]))
-    uf_col = scores_uf_sorted[0][0] if scores_uf_sorted and scores_uf_sorted[0][1] >= 0.5 else None
-
-    # Cidade: coluna OUTRA que UF, com maior score_cidade E onde valores
-    # NÃO são predominantemente UFs (para evitar pegar a coluna UF como Cidade)
-    cidade_col = None
-    for j, score, n_vals in sorted(scores_cidade, key=lambda x: (-x[1], x[0])):
-        if j == uf_col:
-            continue
-        # Pula colunas que são predominantemente UFs (já cobertas)
-        score_uf_j = scores_uf[j][1] if j < len(scores_uf) else 0
-        if score_uf_j > 0.5:
-            continue
-        if score >= 0.5 and n_vals >= 3:
-            cidade_col = j
-            break
-
-    return uf_col, cidade_col
-
-
-def _extract_municipios_from_sheet(path: Path, sheet_name: str) -> pd.DataFrame:
-    """
-    Extrai municípios de uma sheet com detecção heurística robusta.
-
-    Estratégia:
-      1. Lê a sheet inteira (header=None) para ver todo o conteúdo
-      2. Tenta detectar o header buscando texto "UF"/"Cidade" nas primeiras 10 linhas
-      3. Se não acha header, detecta colunas por CONTEÚDO (cols com 2-letras válidas
-         = UF, cols com strings longas = Cidade)
-      4. Aceita UF como sigla OU nome por extenso (converte para sigla)
-      5. Reporta diagnóstico passo-a-passo
-    """
-    df_mun_raw = pd.read_excel(path, sheet_name=sheet_name, engine="openpyxl", header=None)
-    total_excel_rows = len(df_mun_raw)
-    debug_print(f"[DEBUG Municípios] Sheet '{sheet_name}' tem {total_excel_rows} linhas totais (incluindo header)")
-
-    if total_excel_rows < 2 or len(df_mun_raw.columns) < 2:
-        debug_print(f"[ERRO] Sheet '{sheet_name}' muito pequena ou sem colunas suficientes")
-        return pd.DataFrame()
-
-    # ── Etapa 1: detectar header por texto ──
-    header_row = None
-    uf_col_idx = None
-    cidade_col_idx = None
-    max_cols_check = min(8, len(df_mun_raw.columns))
-
-    for i in range(min(15, total_excel_rows)):
-        found_uf = None
-        found_cidade = None
-        for j in range(max_cols_check):
-            val = normalize(str(df_mun_raw.iloc[i, j])) if pd.notna(df_mun_raw.iloc[i, j]) else ""
-            if found_uf is None and (val in ("uf", "estado") or "sigla" in val):
-                found_uf = j
-            if found_cidade is None and ("municipio" in val or "cidade" in val or "city" in val or "localidade" in val):
-                found_cidade = j
-
-        if found_uf is not None and found_cidade is not None:
-            header_row = i
-            uf_col_idx = found_uf
-            cidade_col_idx = found_cidade
-            debug_print(
-                f"[OK] Header detectado na linha {i}: "
-                f"UF=coluna {chr(65+found_uf)}, Cidade=coluna {chr(65+found_cidade)}"
-            )
-            break
-
-    # ── Etapa 2: se header não foi encontrado, detectar por CONTEÚDO ──
-    if header_row is None:
-        debug_print("[INFO] Header por texto não encontrado. Tentando detecção por conteúdo (heurística)...")
-        # Tenta diferentes linhas iniciais de dados (0, 1, 2)
-        for skip in range(0, 5):
-            df_test = df_mun_raw.iloc[skip:].reset_index(drop=True)
-            uf_j, cid_j = _detect_city_column(df_test, max_cols=max_cols_check)
-            if uf_j is not None and cid_j is not None:
-                header_row = skip - 1 if skip > 0 else None
-                uf_col_idx = uf_j
-                cidade_col_idx = cid_j
-                debug_print(
-                    f"[OK] Detecção heurística: dados começam na linha {skip}, "
-                    f"UF=coluna {chr(65+uf_j)}, Cidade=coluna {chr(65+cid_j)}"
-                )
-                break
-
-    if uf_col_idx is None or cidade_col_idx is None:
-        debug_print(f"[ERRO] Não foi possível detectar colunas UF/Cidade em '{sheet_name}'")
-        # Último recurso: usar A e B
-        uf_col_idx = 0
-        cidade_col_idx = 1
-        header_row = 0
-
-    # ── Etapa 3: relê o DataFrame com header correto ──
-    if header_row is not None:
-        df_mun = pd.read_excel(path, sheet_name=sheet_name, engine="openpyxl", header=header_row)
-    else:
-        # Sem header — usa os dados direto
-        df_mun = df_mun_raw.copy()
-
-    debug_print(f"[DEBUG Municípios] Após releitura: {len(df_mun)} linhas de dados")
-
-    if len(df_mun.columns) <= max(uf_col_idx, cidade_col_idx):
-        debug_print(f"[ERRO] Sheet não tem colunas suficientes (esperado {max(uf_col_idx, cidade_col_idx)+1})")
-        return pd.DataFrame()
-
-    # ── Etapa 4: extrai UF e Cidade ──
-    mun_rows = pd.DataFrame({
-        'UF_raw': df_mun.iloc[:, uf_col_idx],
-        'Cidade': df_mun.iloc[:, cidade_col_idx]
-    })
-
-    total_extraido = len(mun_rows)
-
-    # Normaliza UF (aceita sigla OU nome por extenso)
-    mun_rows['UF'] = mun_rows['UF_raw'].apply(_normalize_uf)
-    mun_rows = mun_rows.drop(columns=['UF_raw'])
-
-    # Remove linhas vazias (qualquer coluna ausente)
-    antes_dropna = len(mun_rows)
-    mun_rows = mun_rows[
-        mun_rows['Cidade'].notna() &
-        (mun_rows['Cidade'].astype(str).str.strip() != "") &
-        (mun_rows['Cidade'].astype(str).str.lower() != "nan") &
-        (mun_rows['UF'] != "")
-    ]
-    apos_dropna = len(mun_rows)
-
-    # Remove placeholders/headers
-    _placeholders_exatos = {
-        "cidade", "estado", "municipio", "município", "uf", "sigla",
-        "nome do municipio", "nome do município",
-        "fora do escopo", "placeholder", "exemplo", "n/a", "na", "-",
-    }
-    mask_placeholder = mun_rows["Cidade"].astype(str).str.strip().str.lower().isin(_placeholders_exatos)
-    placeholders_removidos = int(mask_placeholder.sum())
-    mun_rows = mun_rows[~mask_placeholder]
-    apos_placeholder = len(mun_rows)
-
-    debug_print(
-        f"[DEBUG Municípios] {total_extraido} extraidas -> "
-        f"{apos_dropna} apos remover vazias (perdeu {total_extraido-apos_dropna}) -> "
-        f"{apos_placeholder} apos remover placeholders (perdeu {placeholders_removidos})"
-    )
-
-    # Amostra das primeiras linhas para conferência visual
-    if len(mun_rows) > 0:
-        amostra = mun_rows.head(3).to_dict('records')
-        debug_print(f"[DEBUG Municípios] Amostra dos dados extraidos: {amostra}")
-
-    # Validação: se restou muito pouco, alerta (mas NÃO descarta — pode ser legítimo)
-    if len(mun_rows) < 3:
-        debug_print(f"[AVISO] Sheet '{sheet_name}' resultou em apenas {len(mun_rows)} linhas válidas")
-        if len(mun_rows) == 0:
-            return pd.DataFrame()
-
-    debug_print(f"[OK] Municípios extraidos: {len(mun_rows)} linhas válidas")
-    return mun_rows[['UF', 'Cidade']]
 
 
 def load_prediag(path: Path) -> dict:
@@ -1237,7 +811,55 @@ def load_prediag(path: Path) -> dict:
         debug_print("[AVISO] Sheet de Municípios não encontrada!")
         mun_rows = pd.DataFrame()
     else:
-        mun_rows = _extract_municipios_from_sheet(path, municipios_sheet)
+        # Ler sheet sem header para procurar linha do header
+        df_mun_raw = pd.read_excel(path, sheet_name=municipios_sheet, engine="openpyxl", header=None)
+
+        header_row_mun = None
+        # Procura linha que contém "Cidade" ou "Município" E "Estado" ou "UF"
+        for i in range(min(10, len(df_mun_raw))):
+            row_text = ' '.join([normalize(str(v)) for v in df_mun_raw.iloc[i].values if pd.notna(v)])
+            if ('cidade' in row_text or 'municipio' in row_text) and ('estado' in row_text or 'uf' in row_text):
+                header_row_mun = i
+                debug_print(f"[OK] Header de Municípios encontrado na linha {i}")
+                break
+
+        if header_row_mun is not None:
+            # Reler com header correto
+            df_mun = pd.read_excel(path, sheet_name=municipios_sheet, engine="openpyxl", header=header_row_mun)
+            df_mun.columns = [normalize(str(c)) for c in df_mun.columns]
+
+            # find cidade/estado columns
+            cidade_col = next((c for c in df_mun.columns if "cidade" in c or "municipio" in c), None)
+            estado_col = next((c for c in df_mun.columns if "estado" in c or c == "uf"), None)
+            status_col = next((c for c in df_mun.columns if "status" in c), None)
+
+            # VALIDAÇÃO: Só processa se encontrar colunas de cidade E estado
+            if not cidade_col or not estado_col:
+                debug_print(f"[AVISO] Sheet '{municipios_sheet}' não tem colunas de Cidade/Município e UF/Estado - ignorando")
+                mun_rows = pd.DataFrame()
+            elif cidade_col:
+                mun_rows = df_mun[[c for c in [estado_col, cidade_col, status_col] if c]].dropna(subset=[cidade_col])
+                mun_rows = mun_rows.rename(columns={
+                    cidade_col: "Cidade",
+                    estado_col: "UF",
+                    status_col: "Status"
+                } if status_col else {cidade_col: "Cidade", estado_col: "UF"})
+
+                # Filtrar linhas inválidas (placeholders como "Fora do escopo")
+                mun_rows = mun_rows[~mun_rows["Cidade"].str.lower().str.contains("fora do escopo|placeholder|exemplo", na=False)]
+
+                # VALIDAÇÃO: Se tiver muito pouco dado (< 3 linhas), provavelmente não é sheet de municípios
+                if len(mun_rows) < 3:
+                    debug_print(f"[AVISO] Sheet '{municipios_sheet}' tem muito pouco dado ({len(mun_rows)} linhas) - provavelmente não é sheet de municípios")
+                    mun_rows = pd.DataFrame()
+                else:
+                    debug_print(f"[OK] Municípios carregados: {len(mun_rows)} linhas")
+            else:
+                debug_print(f"[AVISO] Sheet '{municipios_sheet}' não tem estrutura de municípios esperada - ignorando")
+                mun_rows = pd.DataFrame()
+        else:
+            debug_print(f"[ERRO] Header não encontrado na sheet de Municípios '{municipios_sheet}'")
+            mun_rows = pd.DataFrame()
 
     # ── Collect unique CFOPs ──
     cfops_declarados = set()
@@ -1340,7 +962,7 @@ def analyse_ncm(ncm_df: pd.DataFrame, uf_col: str, direction: str,
     if ncm_df.empty or sector_sheet_df is None:
         return {"score": None, "total_pairs": 0, "covered": 0, "gaps": [], "detail": []}
 
-    # Build lookup: NCM ->{UF: coverage_value}
+    # Build lookup: NCM → {UF: coverage_value}
     # IMPORTANTE: Normaliza NCMs para formato padrão (apenas dígitos)
     lookup = {}
     original_ncm_map = {}  # Mantém NCM original para exibição
@@ -1363,7 +985,7 @@ def analyse_ncm(ncm_df: pd.DataFrame, uf_col: str, direction: str,
         # Busca exata com NCM normalizado
         cov = lookup.get(ncm_normalized, {}).get(uf, None)
 
-        # Try parent NCM (ex: 30049019 ->300490, 30049000 ->300490)
+        # Try parent NCM (ex: 30049019 → 300490, 30049000 → 300490)
         if cov is None and len(ncm_normalized) >= 6:
             # Tenta com 6 dígitos (capítulo + posição)
             parent_ncm = ncm_normalized[:6]
@@ -1431,121 +1053,49 @@ def analyse_ncm_by_uf_summary(detail: list) -> dict:
     return result
 
 
-def _match_city(cidade_norm: str, cidade_compact: str, uf: str, covered_dict: dict,
-                fuzzy_threshold: float = 0.88):
+def analyse_municipios(client_mun_df: pd.DataFrame, covered_dict: dict) -> dict:
     """
-    Tenta casar um município do cliente contra a base oficial em 3 níveis:
-      1. Match exato pela chave primária (normalize_city)
-      2. Match pela chave secundária (sem stopwords "de/do/da", sem espaços)
-      3. Fuzzy match (similaridade ≥ threshold) limitado à mesma UF
-
-    Returns:
-        dict {"matched": bool, "mode": "exact"|"secondary"|"fuzzy"|None,
-              "matched_name": str|None, "canonical_key": str|None,
-              "similarity": float}
-
-        canonical_key: chave estável (primary key + uf) que pode ser usada
-        para deduplicar entradas equivalentes do cliente.
-    """
-    empty = {"matched": False, "mode": None, "matched_name": None,
-             "canonical_key": None, "similarity": 0.0}
-
-    if not cidade_norm or not uf:
-        return empty
-
-    primary = covered_dict.get("_primary", {})
-    secondary = covered_dict.get("_secondary", {})
-    primary_to_canonical = covered_dict.get("_primary_to_canonical", {})
-    secondary_to_canonical = covered_dict.get("_secondary_to_canonical", {})
-    by_uf = covered_dict.get("_by_uf", {})
-
-    # Nível 1: match exato (chave primária)
-    if (cidade_norm, uf) in primary:
-        canonical = primary_to_canonical.get((cidade_norm, uf), cidade_norm)
-        return {
-            "matched": True,
-            "mode": "exact",
-            "matched_name": primary[(cidade_norm, uf)],
-            "canonical_key": f"{canonical}|{uf}",
-            "similarity": 1.0,
-        }
-
-    # Compatibilidade: dict no formato legado
-    if not primary and (cidade_norm, uf) in covered_dict:
-        return {
-            "matched": True,
-            "mode": "exact",
-            "matched_name": cidade_norm,
-            "canonical_key": f"{cidade_norm}|{uf}",
-            "similarity": 1.0,
-        }
-
-    # Nível 2: match na chave secundária (sem stopwords)
-    if cidade_compact and (cidade_compact, uf) in secondary:
-        canonical = secondary_to_canonical.get((cidade_compact, uf), cidade_compact)
-        return {
-            "matched": True,
-            "mode": "secondary",
-            "matched_name": secondary[(cidade_compact, uf)],
-            "canonical_key": f"{canonical}|{uf}",
-            "similarity": 1.0,
-        }
-
-    # Nível 3: fuzzy match dentro da mesma UF
-    candidates = by_uf.get(uf, [])
-    if candidates:
-        matched_name, similarity = best_fuzzy_match(cidade_norm, candidates, fuzzy_threshold)
-        if matched_name:
-            display = primary.get((matched_name, uf), matched_name)
-            canonical = primary_to_canonical.get((matched_name, uf), matched_name)
-            return {
-                "matched": True,
-                "mode": "fuzzy",
-                "matched_name": display,
-                "canonical_key": f"{canonical}|{uf}",
-                "similarity": similarity,
-            }
-
-    return empty
-
-
-def analyse_municipios(client_mun_df: pd.DataFrame, covered_dict: dict,
-                        fuzzy_threshold: float = 0.90) -> dict:
-    """
-    Analisa municípios verificando SEMPRE contra a lista oficial de aderência.
-
-    Estratégia de matching (em ordem):
-      1. Match exato após normalização (acentos, pontuação, caixa)
-      2. Match após remover stopwords ("de/do/da/dos") e espaços
-      3. Fuzzy match por similaridade (≥ fuzzy_threshold) restrito à mesma UF
-
-    O fuzzy match resolve:
-      - Encoding corrompido no base ("Rond�nia" vs "Rondônia")
-      - Erros de digitação leves ("Joao Pesoa" vs "João Pessoa")
-      - Variações de pontuação/apóstrofo ("D'Oeste" vs "D Oeste" vs "DOeste")
+    Analisa municípios verificando SEMPRE contra a lista oficial de aderência (834 cidades).
 
     IMPORTANTE: Ignora a coluna "Status" do arquivo do cliente.
-    A validação é feita APENAS contra a base oficial.
+    A validação é feita APENAS contra a base oficial de municípios cobertos.
+
+    NOVO: Inclui municípios não válidos (UF inválida) no cálculo de aderência.
+
+    Status possíveis:
+    - "Atendido": Município com UF válida encontrado na base oficial (834 cidades)
+    - "Não Atendido": Município com UF válida MAS não encontrado na base oficial
+    - "Município Não Válido": Município com UF inválida (ex: "NI", "NA", códigos inválidos)
 
     Retorna:
-      - detail: TODAS as linhas originais do arquivo, cada uma marcada com status de cobertura
-      - in_scope / out_of_scope: listas formatadas "Cidade (UF)" de municípios ÚNICOS
-      - score: % de cobertura considerando apenas municípios únicos (2 casas decimais)
-      - fuzzy_matches: lista de matches via fuzzy (para auditoria)
+    - in_scope: Municípios cobertos (na lista oficial)  - Status: "Atendido"
+    - out_of_scope: Municípios não cobertos (fora da lista oficial) - Status: "Não Atendido"
+    - invalid: Municípios com UF inválida - Status: "Município Não Válido"
+    - score: % de municípios ATENDIDOS em relação ao TOTAL (incluindo inválidos)
+    - total: Quantidade total de municípios únicos (válidos + inválidos)
+    - detail: TODAS as linhas com status detalhado para exibição no frontend
     """
     if client_mun_df.empty:
-        return {"total": 0, "in_scope": [], "score": None, "detail": []}
+        return {"total": 0, "in_scope": [], "out_of_scope": [], "invalid": [], "score": None, "detail": []}
 
-    # Placeholders/cabeçalhos que devem ser ignorados — EXATOS (sem startswith)
-    # para não filtrar municípios reais como "Cidade Ocidental (GO)".
-    PLACEHOLDERS = {
-        "cidade", "estado", "municipio", "sigla",
-        "nome do municipio", "cidade estado",
-        "nome do municipio sigla da uf",
-        "uf", "n a", "na",
-        "fora do escopo", "placeholder", "exemplo",
-    }
+    # Placeholders/headers comuns que devem ser ignorados
+    PLACEHOLDERS = [
+        "cidade",
+        "estado",
+        "municipio",
+        "sigla",
+        "nome do municipio",
+        "cidade (estado)",
+        "nome do município (sigla da uf)",
+        "município",
+        "uf",
+        "n a",
+        "na",
+        "exemplo",
+        "placeholder",
+    ]
 
+    # Lista de UFs válidas do Brasil
     VALID_UFS = {
         "AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA",
         "MT", "MS", "MG", "PA", "PB", "PR", "PE", "PI", "RJ", "RN",
@@ -1554,160 +1104,137 @@ def analyse_municipios(client_mun_df: pd.DataFrame, covered_dict: dict,
 
     cidade_col = "Cidade" if "Cidade" in client_mun_df.columns else client_mun_df.columns[0]
 
-    # Cache de matches: cada cidade única (normalized + UF) -> resultado do match
-    # para evitar fazer match múltiplas vezes da mesma cidade
-    match_cache = {}
+    in_scope = []
+    out_of_scope = []
+    invalid = []
+    detail = []  # Lista DETALHADA para exibir no frontend
 
-    # Conjunto de municípios únicos (para calcular score)
-    unique_keys = set()
-
-    # Lista DETALHADA: TODAS as linhas do arquivo original, cada uma com status de cobertura
-    detail = []
-
-    # Diagnóstico: contadores de cada filtro
-    diag = {
-        "linhas_input": len(client_mun_df),
-        "vazias": 0,
-        "uf_invalida": 0,
-        "cidade_muito_curta": 0,
-        "placeholder": 0,
-        "validas_pre_dedup": 0,
-        "duplicatas_colapsadas": 0,
-    }
+    # Conjunto para rastrear municípios únicos (deduplicação)
+    seen_municipalities = set()
 
     for _, row in client_mun_df.iterrows():
         cidade = str(row.get(cidade_col, "")).strip()
-        uf_raw = str(row.get("UF", "")).strip()
+        uf_raw = str(row.get("UF", "")).strip().upper()
 
+        # Pula células vazias ou inválidas
         if not cidade or cidade.lower() == "nan" or not uf_raw or uf_raw.lower() == "nan":
-            diag["vazias"] += 1
             continue
 
-        # Normaliza UF: aceita sigla OU nome por extenso ("São Paulo" -> "SP")
-        uf = _normalize_uf(uf_raw)
-        if not uf or uf not in VALID_UFS:
-            diag["uf_invalida"] += 1
+        cidade_normalized = normalize(cidade)
+
+        # Ignora strings muito curtas (provavelmente não são nomes de cidades válidos)
+        if len(cidade_normalized) < 3:
             continue
 
-        cidade_norm = normalize_city(cidade)
-        if len(cidade_norm) < 3:
-            diag["cidade_muito_curta"] += 1
+        # Verifica se é placeholder/header - ignora completamente
+        # Usa match EXATO apenas, sem startswith para evitar ignorar municípios reais
+        # como "Cidade Ocidental (GO)"
+        is_placeholder = cidade_normalized in PLACEHOLDERS
+        if is_placeholder:
             continue
 
-        if cidade_norm in PLACEHOLDERS:
-            diag["placeholder"] += 1
+        # === NOVA LÓGICA: Valida UF ANTES de fazer lookup ===
+        if uf_raw not in VALID_UFS:
+            # UF INVÁLIDA: marca como "Município Não Válido"
+            municipality_key = f"{cidade_normalized}|{uf_raw}"
+
+            # Adiciona ao detail (TODAS as linhas)
+            detail.append({
+                "Cidade": cidade,
+                "Cidade_Cliente": cidade,
+                "UF": uf_raw,  # Mantém UF inválida original (ex: "NI")
+                "Coberto": False,
+                "Status": "Município Não Válido",
+                "Modo_Match": None,
+                "Similaridade": None,
+            })
+
+            # Adiciona à lista de inválidos (apenas únicos)
+            if municipality_key not in seen_municipalities:
+                invalid.append(f"{cidade} ({uf_raw})")
+                seen_municipalities.add(municipality_key)
+
             continue
 
-        diag["validas_pre_dedup"] += 1
+        # UF VÁLIDA: Procede com validação contra base oficial
+        uf = uf_raw  # UF já validada
+        lookup_key = (cidade_normalized, uf)
+        is_covered = lookup_key in covered_dict
 
-        # Cache key para este município
-        cache_key = f"{cidade_norm}|{uf}"
+        municipality_key = f"{cidade_normalized}|{uf}"
 
-        # Se já processamos esta cidade, reutiliza o resultado
-        if cache_key not in match_cache:
-            cidade_compact = normalize_city_key(cidade)
-            match = _match_city(cidade_norm, cidade_compact, uf, covered_dict, fuzzy_threshold)
-
-            if match["matched"]:
-                display = match["matched_name"] or cidade
-            else:
-                display = cidade
-
-            match_cache[cache_key] = {
-                "display": display,
-                "matched": match["matched"],
-                "mode": match["mode"] if match["matched"] else None,
-                "similarity": round(match["similarity"], 3) if match["matched"] else None,
-            }
-
-        # Adiciona à lista de únicos (para cálculo de score)
-        if cache_key not in unique_keys:
-            unique_keys.add(cache_key)
+        # Adiciona ao detail (TODAS as linhas)
+        if is_covered:
+            detail.append({
+                "Cidade": cidade,
+                "Cidade_Cliente": cidade,
+                "UF": uf,
+                "Coberto": True,
+                "Status": "Atendido",
+                "Modo_Match": "exact",  # Simplificado para esta versão
+                "Similaridade": 1.0,
+            })
         else:
-            diag["duplicatas_colapsadas"] += 1
+            detail.append({
+                "Cidade": cidade,
+                "Cidade_Cliente": cidade,
+                "UF": uf,
+                "Coberto": False,
+                "Status": "Não Atendido",
+                "Modo_Match": None,
+                "Similaridade": None,
+            })
 
-        # IMPORTANTE: Adiciona TODAS as linhas ao detail (sem dedup)
-        cached = match_cache[cache_key]
-        detail.append({
-            "Cidade": cached["display"],
-            "Cidade_Cliente": cidade,
-            "UF": uf,
-            "Coberto": cached["matched"],
-            "Status": "Atendido" if cached["matched"] else "Não Atendido",
-            "Modo_Match": cached["mode"],
-            "Similaridade": cached["similarity"],
-        })
+        # Adiciona às listas de únicos
+        if municipality_key not in seen_municipalities:
+            if is_covered:
+                in_scope.append(f"{cidade} ({uf})")
+            else:
+                out_of_scope.append(f"{cidade} ({uf})")
+            seen_municipalities.add(municipality_key)
 
-    # Ordena: não-cobertos primeiro, depois alfabético — para o gap
-    # aparecer no topo (mesmo padrão de NCMs)
-    detail = sorted(
-        detail,
-        key=lambda r: (r["Coberto"], r["UF"], r["Cidade"])
-    )
+    # DEDUPLIFICAR listas (já foi feito via seen_municipalities)
+    in_scope_unique = sorted(set(in_scope))
+    out_of_scope_unique = sorted(set(out_of_scope))
+    invalid_unique = sorted(set(invalid))
 
-    # Para in_scope/out_of_scope: usar apenas municípios ÚNICOS (deduplicados)
-    unique_detail = {}
-    for r in detail:
-        key = f"{r['Cidade']}|{r['UF']}"
-        if key not in unique_detail:
-            unique_detail[key] = r
+    # Calcular total de municípios únicos (cobertos + não cobertos + inválidos)
+    total_municipios = len(in_scope_unique) + len(out_of_scope_unique) + len(invalid_unique)
 
-    in_scope_unique = sorted(f"{r['Cidade']} ({r['UF']})" for r in unique_detail.values() if r["Coberto"])
-    out_of_scope_unique = sorted(f"{r['Cidade']} ({r['UF']})" for r in unique_detail.values() if not r["Coberto"])
-
-    # Fuzzy matches também apenas para únicos (para não duplicar na lista de auditoria)
-    fuzzy_seen = set()
-    fuzzy_matches = []
-    for r in detail:
-        if r["Modo_Match"] == "fuzzy":
-            key = f"{r['Cidade_Cliente']}|{r['UF']}"
-            if key not in fuzzy_seen:
-                fuzzy_seen.add(key)
-                fuzzy_matches.append({
-                    "input": f"{r['Cidade_Cliente']} ({r['UF']})",
-                    "matched": f"{r['Cidade']} ({r['UF']})",
-                    "similarity": r["Similaridade"],
-                })
-
-    # Score calculado com base em municípios ÚNICOS, não em todas as linhas
-    total_municipios = len(unique_detail)
-    covered_count = sum(1 for r in unique_detail.values() if r["Coberto"])
-    not_covered_count = total_municipios - covered_count
-
-    debug_print(
-        f"[DEBUG Análise Municípios] input={diag['linhas_input']} -> "
-        f"vazias={diag['vazias']}, UF inválida={diag['uf_invalida']}, "
-        f"cidade <3 chars={diag['cidade_muito_curta']}, placeholders={diag['placeholder']}, "
-        f"válidas={diag['validas_pre_dedup']}, "
-        f"duplicatas colapsadas={diag['duplicatas_colapsadas']} -> "
-        f"únicos={total_municipios} (cobertos={covered_count}, fora={not_covered_count})"
-    )
-
+    # Se não houver nenhum município válido, não analisa
     if total_municipios == 0:
         return {
             "total": 0,
             "in_scope": [],
             "out_of_scope": [],
+            "invalid": [],
             "covered": 0,
             "not_covered": 0,
+            "invalid_count": 0,
             "score": None,
             "detail": [],
-            "fuzzy_matches": [],
-            "diagnostico": diag,
         }
 
-    score = round((covered_count / total_municipios) * 100.0, 2)
+    # Calcular score: % de municípios ATENDIDOS em relação ao TOTAL (incluindo inválidos)
+    # Score = (Atendidos / Total) × 100
+    score = round((len(in_scope_unique) / total_municipios) * 100.0, 2)
+
+    # Ordena detail: não atendidos e inválidos primeiro, depois alfabético
+    detail = sorted(
+        detail,
+        key=lambda r: (r["Status"] != "Não Atendido", r["Status"] != "Município Não Válido", r["UF"], r["Cidade"])
+    )
 
     return {
         "total": total_municipios,
         "in_scope": in_scope_unique,
         "out_of_scope": out_of_scope_unique,
-        "covered": covered_count,
-        "not_covered": not_covered_count,
+        "invalid": invalid_unique,
+        "covered": len(in_scope_unique),
+        "not_covered": len(out_of_scope_unique),
+        "invalid_count": len(invalid_unique),
         "score": score,
-        "detail": detail,              # NOVO: lista completa com status por cidade
-        "fuzzy_matches": fuzzy_matches,
-        "diagnostico": diag,
+        "detail": detail,  # NOVO: lista completa com status por linha
     }
 
 
@@ -1895,10 +1422,14 @@ if __name__ == "__main__":
     debug_print()
     debug_print("-- MUNICIPIOS --")
     m = result["municipios"]
-    debug_print(f"  Total: {m['total']} | Dentro do escopo: {len(m.get('in_scope', []))} | Fora: {len(m.get('out_of_scope', []))}")
+    debug_print(f"  Total: {m['total']} | Atendidos: {m.get('covered', 0)} | Não Atendidos: {m.get('not_covered', 0)} | Inválidos: {m.get('invalid_count', 0)}")
+    debug_print(f"  Score: {m.get('score', 0)}% (Atendidos / Total)")
     if m.get("out_of_scope"):
-        debug_print(f"  Fora do escopo: {', '.join(m['out_of_scope'][:10])}" +
-              ("..." if len(m["out_of_scope"]) > 10 else ""))
+        debug_print(f"  Não Atendidos: {', '.join(m['out_of_scope'][:5])}" +
+              ("..." if len(m["out_of_scope"]) > 5 else ""))
+    if m.get("invalid"):
+        debug_print(f"  Inválidos (UF incorreta): {', '.join(m['invalid'][:5])}" +
+              ("..." if len(m["invalid"]) > 5 else ""))
 
     debug_print()
     debug_print("-- CFOPs --")
