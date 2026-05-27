@@ -1060,19 +1060,23 @@ def analyse_municipios(client_mun_df: pd.DataFrame, covered_dict: dict) -> dict:
     IMPORTANTE: Ignora a coluna "Status" do arquivo do cliente.
     A validação é feita APENAS contra a base oficial de municípios cobertos.
 
-    Lógica:
-    - Normaliza o nome do município do cliente
-    - Verifica se (município_normalizado, UF) está na lista oficial
-    - Marca como coberto APENAS se estiver na lista de 834 cidades
+    NOVO: Inclui municípios não válidos (UF inválida) no cálculo de aderência.
+
+    Status possíveis:
+    - "Atendido": Município com UF válida encontrado na base oficial (834 cidades)
+    - "Não Atendido": Município com UF válida MAS não encontrado na base oficial
+    - "Município Não Válido": Município com UF inválida (ex: "NI", "NA", códigos inválidos)
 
     Retorna:
-    - in_scope: Municípios cobertos (na lista oficial)
-    - out_of_scope: Municípios não cobertos (fora da lista oficial)
-    - score: % de municípios cobertos em relação ao total
-    - total: Quantidade total de municípios únicos
+    - in_scope: Municípios cobertos (na lista oficial)  - Status: "Atendido"
+    - out_of_scope: Municípios não cobertos (fora da lista oficial) - Status: "Não Atendido"
+    - invalid: Municípios com UF inválida - Status: "Município Não Válido"
+    - score: % de municípios ATENDIDOS em relação ao TOTAL (incluindo inválidos)
+    - total: Quantidade total de municípios únicos (válidos + inválidos)
+    - detail: TODAS as linhas com status detalhado para exibição no frontend
     """
     if client_mun_df.empty:
-        return {"total": 0, "in_scope": [], "score": None}
+        return {"total": 0, "in_scope": [], "out_of_scope": [], "invalid": [], "score": None, "detail": []}
 
     # Placeholders/headers comuns que devem ser ignorados
     PLACEHOLDERS = [
@@ -1085,6 +1089,10 @@ def analyse_municipios(client_mun_df: pd.DataFrame, covered_dict: dict) -> dict:
         "nome do município (sigla da uf)",
         "município",
         "uf",
+        "n a",
+        "na",
+        "exemplo",
+        "placeholder",
     ]
 
     # Lista de UFs válidas do Brasil
@@ -1095,19 +1103,21 @@ def analyse_municipios(client_mun_df: pd.DataFrame, covered_dict: dict) -> dict:
     }
 
     cidade_col = "Cidade" if "Cidade" in client_mun_df.columns else client_mun_df.columns[0]
+
     in_scope = []
     out_of_scope = []
+    invalid = []
+    detail = []  # Lista DETALHADA para exibir no frontend
+
+    # Conjunto para rastrear municípios únicos (deduplicação)
+    seen_municipalities = set()
 
     for _, row in client_mun_df.iterrows():
         cidade = str(row.get(cidade_col, "")).strip()
-        uf = str(row.get("UF", "")).strip().upper()
+        uf_raw = str(row.get("UF", "")).strip().upper()
 
         # Pula células vazias ou inválidas
-        if not cidade or cidade.lower() == "nan" or not uf or uf.lower() == "nan":
-            continue
-
-        # Valida se UF é válida
-        if uf not in VALID_UFS:
+        if not cidade or cidade.lower() == "nan" or not uf_raw or uf_raw.lower() == "nan":
             continue
 
         cidade_normalized = normalize(cidade)
@@ -1117,30 +1127,79 @@ def analyse_municipios(client_mun_df: pd.DataFrame, covered_dict: dict) -> dict:
             continue
 
         # Verifica se é placeholder/header - ignora completamente
-        is_placeholder = (
-            cidade_normalized in PLACEHOLDERS or
-            any(cidade_normalized == ph for ph in PLACEHOLDERS) or
-            any(cidade_normalized.startswith(ph + " ") for ph in PLACEHOLDERS)
-        )
+        # Usa match EXATO apenas, sem startswith para evitar ignorar municípios reais
+        # como "Cidade Ocidental (GO)"
+        is_placeholder = cidade_normalized in PLACEHOLDERS
         if is_placeholder:
             continue
 
-        # SEMPRE valida contra a lista oficial de aderência (834 municípios)
-        # Ignora coluna "Status" se existir - a fonte de verdade é a base oficial
+        # === NOVA LÓGICA: Valida UF ANTES de fazer lookup ===
+        if uf_raw not in VALID_UFS:
+            # UF INVÁLIDA: marca como "Município Não Válido"
+            municipality_key = f"{cidade_normalized}|{uf_raw}"
+
+            # Adiciona ao detail (TODAS as linhas)
+            detail.append({
+                "Cidade": cidade,
+                "Cidade_Cliente": cidade,
+                "UF": uf_raw,  # Mantém UF inválida original (ex: "NI")
+                "Coberto": False,
+                "Status": "Município Não Válido",
+                "Modo_Match": None,
+                "Similaridade": None,
+            })
+
+            # Adiciona à lista de inválidos (apenas únicos)
+            if municipality_key not in seen_municipalities:
+                invalid.append(f"{cidade} ({uf_raw})")
+                seen_municipalities.add(municipality_key)
+
+            continue
+
+        # UF VÁLIDA: Procede com validação contra base oficial
+        uf = uf_raw  # UF já validada
         lookup_key = (cidade_normalized, uf)
         is_covered = lookup_key in covered_dict
 
-        if is_covered:
-            in_scope.append(f"{cidade} ({uf})")
-        else:
-            out_of_scope.append(f"{cidade} ({uf})")
+        municipality_key = f"{cidade_normalized}|{uf}"
 
-    # DEDUPLIFICAR antes de calcular totais e scores
+        # Adiciona ao detail (TODAS as linhas)
+        if is_covered:
+            detail.append({
+                "Cidade": cidade,
+                "Cidade_Cliente": cidade,
+                "UF": uf,
+                "Coberto": True,
+                "Status": "Atendido",
+                "Modo_Match": "exact",  # Simplificado para esta versão
+                "Similaridade": 1.0,
+            })
+        else:
+            detail.append({
+                "Cidade": cidade,
+                "Cidade_Cliente": cidade,
+                "UF": uf,
+                "Coberto": False,
+                "Status": "Não Atendido",
+                "Modo_Match": None,
+                "Similaridade": None,
+            })
+
+        # Adiciona às listas de únicos
+        if municipality_key not in seen_municipalities:
+            if is_covered:
+                in_scope.append(f"{cidade} ({uf})")
+            else:
+                out_of_scope.append(f"{cidade} ({uf})")
+            seen_municipalities.add(municipality_key)
+
+    # DEDUPLIFICAR listas (já foi feito via seen_municipalities)
     in_scope_unique = sorted(set(in_scope))
     out_of_scope_unique = sorted(set(out_of_scope))
+    invalid_unique = sorted(set(invalid))
 
-    # Calcular total de municípios únicos (cobertos + não cobertos)
-    total_municipios = len(in_scope_unique) + len(out_of_scope_unique)
+    # Calcular total de municípios únicos (cobertos + não cobertos + inválidos)
+    total_municipios = len(in_scope_unique) + len(out_of_scope_unique) + len(invalid_unique)
 
     # Se não houver nenhum município válido, não analisa
     if total_municipios == 0:
@@ -1148,19 +1207,34 @@ def analyse_municipios(client_mun_df: pd.DataFrame, covered_dict: dict) -> dict:
             "total": 0,
             "in_scope": [],
             "out_of_scope": [],
+            "invalid": [],
+            "covered": 0,
+            "not_covered": 0,
+            "invalid_count": 0,
             "score": None,
+            "detail": [],
         }
 
-    # Calcular score: % de municípios cobertos em relação ao total (com 2 casas decimais)
+    # Calcular score: % de municípios ATENDIDOS em relação ao TOTAL (incluindo inválidos)
+    # Score = (Atendidos / Total) × 100
     score = round((len(in_scope_unique) / total_municipios) * 100.0, 2)
+
+    # Ordena detail: não atendidos e inválidos primeiro, depois alfabético
+    detail = sorted(
+        detail,
+        key=lambda r: (r["Status"] != "Não Atendido", r["Status"] != "Município Não Válido", r["UF"], r["Cidade"])
+    )
 
     return {
         "total": total_municipios,
         "in_scope": in_scope_unique,
         "out_of_scope": out_of_scope_unique,
+        "invalid": invalid_unique,
         "covered": len(in_scope_unique),
         "not_covered": len(out_of_scope_unique),
+        "invalid_count": len(invalid_unique),
         "score": score,
+        "detail": detail,  # NOVO: lista completa com status por linha
     }
 
 
@@ -1348,10 +1422,14 @@ if __name__ == "__main__":
     debug_print()
     debug_print("-- MUNICIPIOS --")
     m = result["municipios"]
-    debug_print(f"  Total: {m['total']} | Dentro do escopo: {len(m.get('in_scope', []))} | Fora: {len(m.get('out_of_scope', []))}")
+    debug_print(f"  Total: {m['total']} | Atendidos: {m.get('covered', 0)} | Não Atendidos: {m.get('not_covered', 0)} | Inválidos: {m.get('invalid_count', 0)}")
+    debug_print(f"  Score: {m.get('score', 0)}% (Atendidos / Total)")
     if m.get("out_of_scope"):
-        debug_print(f"  Fora do escopo: {', '.join(m['out_of_scope'][:10])}" +
-              ("..." if len(m["out_of_scope"]) > 10 else ""))
+        debug_print(f"  Não Atendidos: {', '.join(m['out_of_scope'][:5])}" +
+              ("..." if len(m["out_of_scope"]) > 5 else ""))
+    if m.get("invalid"):
+        debug_print(f"  Inválidos (UF incorreta): {', '.join(m['invalid'][:5])}" +
+              ("..." if len(m["invalid"]) > 5 else ""))
 
     debug_print()
     debug_print("-- CFOPs --")
