@@ -954,76 +954,168 @@ def load_prediag(path: Path) -> dict:
 def analyse_ncm(ncm_df: pd.DataFrame, uf_col: str, direction: str,
                 sector_sheet_df: pd.DataFrame) -> dict:
     """
-    For each (NCM, UF) pair in ncm_df, looks up coverage in sector_sheet_df.
+    Analisa pares (NCM, UF) contra a base oficial de aderência.
+
+    3 Status possíveis:
+    - "Atendido": NCM encontrado na base + cobertura "Atendido" para a UF
+    - "Não Atendido": NCM encontrado na base + cobertura "Não Atendido" para a UF
+    - "NCM Não Encontrado": NCM NÃO existe na base oficial
+
+    Modos de Match (auditoria):
+    - "exato": NCM completo bate com a base
+    - "parent_6": Match aproximado via NCM[:6] (subposição)
+    - "parent_4": Match aproximado via NCM[:4] (capítulo)
+    - None: Sem match (NCM Não Encontrado)
+
+    Score = (linhas_atendidas / total_linhas) × 100  [por volumetria de pares]
+
     direction : 'Compras' or 'Vendas'
     uf_col    : column name in ncm_df that holds the relevant UF
-    Returns structured result dict.
     """
+    empty_result = {
+        "score": None,
+        "total_pairs": 0, "total_linhas": 0,
+        "covered": 0, "linhas_atendidas": 0,
+        "linhas_nao_atendidas": 0, "linhas_nao_encontradas": 0,
+        "linhas_match_aproximado": 0,
+        "total_ncms_unicos": 0,
+        "ncms_atendidos": 0, "ncms_nao_atendidos": 0, "ncms_nao_encontrados": 0,
+        "gaps": [], "detail": [],
+        "ncms_nao_encontrados_lista": [],
+    }
     if ncm_df.empty or sector_sheet_df is None:
-        return {"score": None, "total_pairs": 0, "covered": 0, "gaps": [], "detail": []}
+        return empty_result
 
     # Build lookup: NCM → {UF: coverage_value}
-    # IMPORTANTE: Normaliza NCMs para formato padrão (apenas dígitos)
     lookup = {}
-    original_ncm_map = {}  # Mantém NCM original para exibição
     for _, row in sector_sheet_df.iterrows():
         ncm_raw = str(row["COMMODITY_CODE"])
         ncm_normalized = clean_ncm(ncm_raw)
-        # Preserva valores como estão na planilha (texto "Atendido"/"Não atendido")
         lookup[ncm_normalized] = {uf: row.get(uf, None) for uf in UF_COLS}
-        original_ncm_map[ncm_normalized] = ncm_raw
 
     results = []
     for _, row in ncm_df.iterrows():
         ncm_raw = str(row.get("NCM", "")).strip()
         ncm_normalized = clean_ncm(ncm_raw)
-        uf  = str(row.get(uf_col, "")).strip().upper()
+        uf = str(row.get(uf_col, "")).strip().upper()
 
         if not ncm_normalized or not uf or uf == "NAN":
             continue
 
-        # Busca exata com NCM normalizado
-        cov = lookup.get(ncm_normalized, {}).get(uf, None)
+        # Determina tipo de match
+        cov = None
+        modo_match = None
+        ncm_match = None  # NCM efetivamente casado na base
 
-        # Try parent NCM (ex: 30049019 → 300490, 30049000 → 300490)
-        if cov is None and len(ncm_normalized) >= 6:
-            # Tenta com 6 dígitos (capítulo + posição)
+        # 1. Match exato
+        if ncm_normalized in lookup:
+            cov = lookup[ncm_normalized].get(uf, None)
+            if cov is not None:
+                modo_match = "exato"
+                ncm_match = ncm_normalized
+
+        # 2. Match aproximado via parent 6 dígitos
+        if modo_match is None and len(ncm_normalized) >= 6:
             parent_ncm = ncm_normalized[:6]
-            cov = lookup.get(parent_ncm, {}).get(uf, None)
+            if parent_ncm in lookup:
+                cov = lookup[parent_ncm].get(uf, None)
+                if cov is not None:
+                    modo_match = "parent_6"
+                    ncm_match = parent_ncm
 
-            # Se não encontrou, tenta com 4 dígitos (capítulo)
-            if cov is None and len(ncm_normalized) >= 4:
-                parent_ncm = ncm_normalized[:4]
-                cov = lookup.get(parent_ncm, {}).get(uf, None)
+        # 3. Match aproximado via parent 4 dígitos
+        if modo_match is None and len(ncm_normalized) >= 4:
+            parent_ncm = ncm_normalized[:4]
+            if parent_ncm in lookup:
+                cov = lookup[parent_ncm].get(uf, None)
+                if cov is not None:
+                    modo_match = "parent_4"
+                    ncm_match = parent_ncm
 
-        # Verifica se há cobertura (valores > 0, como 1 para Pharma ou 100 para Chemical)
-        # Também aceita texto "Atendido" se houver
-        if cov is not None:
-            cov_str = normalize(str(cov))
-            covered = (cov_str == "atendido") or (isinstance(cov, (int, float)) and cov > 0)
-        else:
+        # Determina Status
+        if modo_match is None:
+            # NCM não está na base oficial
+            status = "NCM Não Encontrado"
             covered = False
+        else:
+            # Verifica se há cobertura na célula
+            cov_str = normalize(str(cov)) if cov is not None else ""
+            covered = (cov_str == "atendido") or (isinstance(cov, (int, float)) and cov > 0)
+            status = "Atendido" if covered else "Não Atendido"
+
         results.append({
-            "NCM": ncm_raw,  # Mantém formato original do cliente para exibição
-            "UF":  uf,
+            "NCM": ncm_raw,
+            "NCM_Normalizado": ncm_normalized,
+            "NCM_Match": ncm_match,
+            "UF": uf,
             "Cobertura": cov,
             "Coberto": covered,
+            "Status": status,
+            "Modo_Match": modo_match,
             "Descricao": str(row.get("Descricao", "")),
         })
 
     if not results:
-        return {"score": None, "total_pairs": 0, "covered": 0, "gaps": [], "detail": []}
+        return empty_result
 
-    total = len(results)
-    covered_count = sum(1 for r in results if r["Coberto"])
-    score = round(covered_count / total * 100, 1) if total else 0
+    # Totais por LINHAS (volumetria - pares NCM × UF)
+    total_linhas = len(results)
+    linhas_atendidas = sum(1 for r in results if r["Status"] == "Atendido")
+    linhas_nao_atendidas = sum(1 for r in results if r["Status"] == "Não Atendido")
+    linhas_nao_encontradas = sum(1 for r in results if r["Status"] == "NCM Não Encontrado")
+    linhas_match_aproximado = sum(1 for r in results if r["Modo_Match"] in ("parent_6", "parent_4"))
 
+    # Totais por NCMs ÚNICOS
+    ncms_unicos = {r["NCM_Normalizado"]: r["Status"] for r in results}
+    # Re-classifica: NCM é "Atendido" se pelo menos 1 par dele foi atendido
+    ncm_best_status = {}
+    for r in results:
+        ncm_n = r["NCM_Normalizado"]
+        if ncm_n not in ncm_best_status:
+            ncm_best_status[ncm_n] = r["Status"]
+        else:
+            # Prioridade: Atendido > Não Atendido > NCM Não Encontrado
+            priorities = {"Atendido": 3, "Não Atendido": 2, "NCM Não Encontrado": 1}
+            if priorities.get(r["Status"], 0) > priorities.get(ncm_best_status[ncm_n], 0):
+                ncm_best_status[ncm_n] = r["Status"]
+
+    total_ncms_unicos = len(ncm_best_status)
+    ncms_atendidos = sum(1 for s in ncm_best_status.values() if s == "Atendido")
+    ncms_nao_atendidos = sum(1 for s in ncm_best_status.values() if s == "Não Atendido")
+    ncms_nao_encontrados = sum(1 for s in ncm_best_status.values() if s == "NCM Não Encontrado")
+
+    # Lista de NCMs não encontrados (únicos)
+    ncms_nao_encontrados_lista = sorted({
+        r["NCM"] for r in results if r["Status"] == "NCM Não Encontrado"
+    })
+
+    # Score baseado em LINHAS (volumetria) - igual municípios
+    score = round(linhas_atendidas / total_linhas * 100, 2) if total_linhas else 0
+
+    # Gaps: TODOS os pares não atendidos (inclui Não Atendido + NCM Não Encontrado)
     gaps = [r for r in results if not r["Coberto"]]
 
     return {
+        # Score principal (por volumetria)
         "score": score,
-        "total_pairs": total,
-        "covered": covered_count,
+
+        # Volumetria (PARES) - NOVO
+        "total_pairs": total_linhas,  # alias para compatibilidade
+        "total_linhas": total_linhas,
+        "linhas_atendidas": linhas_atendidas,
+        "linhas_nao_atendidas": linhas_nao_atendidas,
+        "linhas_nao_encontradas": linhas_nao_encontradas,
+        "linhas_match_aproximado": linhas_match_aproximado,
+
+        # NCMs únicos - NOVO
+        "total_ncms_unicos": total_ncms_unicos,
+        "ncms_atendidos": ncms_atendidos,
+        "ncms_nao_atendidos": ncms_nao_atendidos,
+        "ncms_nao_encontrados": ncms_nao_encontrados,
+        "ncms_nao_encontrados_lista": ncms_nao_encontrados_lista,
+
+        # Compatibilidade
+        "covered": linhas_atendidas,
         "gaps": gaps,
         "detail": results,
     }

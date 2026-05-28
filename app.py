@@ -400,6 +400,24 @@ def build_excel_report(result: dict) -> bytes:
             ["Score NCM Vendas (%)", result["ncm_vendas"].get("score")],
             ["Score Municípios (%)", result["municipios"].get("score")],
             ["Score CFOPs (%)", result.get("cfops", {}).get("score")],
+            ["", ""],
+            ["NCM COMPRAS - Volumetria", ""],
+            ["Total de Pares NCM × UF", result["ncm_compras"].get("total_linhas", 0)],
+            ["Pares Atendidos", result["ncm_compras"].get("linhas_atendidas", 0)],
+            ["Pares Não Atendidos", result["ncm_compras"].get("linhas_nao_atendidas", 0)],
+            ["Pares com NCM Não Encontrado", result["ncm_compras"].get("linhas_nao_encontradas", 0)],
+            ["NCMs Únicos", result["ncm_compras"].get("total_ncms_unicos", 0)],
+            ["NCMs Não Encontrados", result["ncm_compras"].get("ncms_nao_encontrados", 0)],
+            ["", ""],
+            ["NCM VENDAS - Volumetria", ""],
+            ["Total de Pares NCM × UF", result["ncm_vendas"].get("total_linhas", 0)],
+            ["Pares Atendidos", result["ncm_vendas"].get("linhas_atendidas", 0)],
+            ["Pares Não Atendidos", result["ncm_vendas"].get("linhas_nao_atendidas", 0)],
+            ["Pares com NCM Não Encontrado", result["ncm_vendas"].get("linhas_nao_encontradas", 0)],
+            ["NCMs Únicos", result["ncm_vendas"].get("total_ncms_unicos", 0)],
+            ["NCMs Não Encontrados", result["ncm_vendas"].get("ncms_nao_encontrados", 0)],
+            ["", ""],
+            ["MUNICÍPIOS - Volumetria", ""],
             ["Total de Linhas (Municípios)", result["municipios"].get("total_linhas", 0)],
             ["Linhas Atendidas", result["municipios"].get("linhas_atendidas", 0)],
             ["Linhas Não Atendidas", result["municipios"].get("linhas_nao_atendidas", 0)],
@@ -428,17 +446,43 @@ def build_excel_report(result: dict) -> bytes:
                     for uf, v in sorted(uf_v.items())]
             pd.DataFrame(rows).to_excel(writer, sheet_name="NCM Vendas por UF", index=False)
 
-        # ── Gaps Compras ──
+        # ── Gaps Compras (com 3 status) ──
         gaps_c = result["ncm_compras"].get("gaps", [])
         if gaps_c:
-            pd.DataFrame(gaps_c)[["NCM", "UF", "Descricao", "Cobertura"]].to_excel(
-                writer, sheet_name="Gaps NCM Compras", index=False)
+            rows_c = [{
+                "NCM": g.get("NCM", ""),
+                "UF": g.get("UF", ""),
+                "Status": g.get("Status", ""),
+                "Modo de Match": g.get("Modo_Match") or "-",
+                "NCM Match": g.get("NCM_Match") or "-",
+                "Cobertura": g.get("Cobertura", ""),
+                "Descricao": g.get("Descricao", ""),
+            } for g in gaps_c]
+            pd.DataFrame(rows_c).to_excel(writer, sheet_name="Gaps NCM Compras", index=False)
 
-        # ── Gaps Vendas ──
+        # ── Gaps Vendas (com 3 status) ──
         gaps_v = result["ncm_vendas"].get("gaps", [])
         if gaps_v:
-            pd.DataFrame(gaps_v)[["NCM", "UF", "Descricao", "Cobertura"]].to_excel(
-                writer, sheet_name="Gaps NCM Vendas", index=False)
+            rows_v = [{
+                "NCM": g.get("NCM", ""),
+                "UF": g.get("UF", ""),
+                "Status": g.get("Status", ""),
+                "Modo de Match": g.get("Modo_Match") or "-",
+                "NCM Match": g.get("NCM_Match") or "-",
+                "Cobertura": g.get("Cobertura", ""),
+                "Descricao": g.get("Descricao", ""),
+            } for g in gaps_v]
+            pd.DataFrame(rows_v).to_excel(writer, sheet_name="Gaps NCM Vendas", index=False)
+
+        # ── NCMs Não Encontrados na Base (separado para facilitar revisão) ──
+        ncms_ne_c = result["ncm_compras"].get("ncms_nao_encontrados_lista", [])
+        ncms_ne_v = result["ncm_vendas"].get("ncms_nao_encontrados_lista", [])
+        if ncms_ne_c or ncms_ne_v:
+            ne_rows = (
+                [{"Origem": "Compras", "NCM": ncm} for ncm in ncms_ne_c] +
+                [{"Origem": "Vendas", "NCM": ncm} for ncm in ncms_ne_v]
+            )
+            pd.DataFrame(ne_rows).to_excel(writer, sheet_name="NCMs Não Encontrados", index=False)
 
         # ── Municípios ──
         m = result["municipios"]
@@ -607,37 +651,116 @@ if page == "▸ Nova Análise":
             "📥 NCM Compras", "📤 NCM Vendas", "🏙 Municípios ISS", "⚠️ CFOPs", "📋 CSTs"
         ])
 
+        # Helper: renderiza aba NCM (Compras ou Vendas) com 3 status + volumetria
+        def render_ncm_tab(data, label_uf, key_prefix):
+            if data.get("total_linhas", 0) == 0:
+                st.info(f"Nenhum NCM de {key_prefix} preenchido no pré-diagnóstico.")
+                return
+
+            # Score principal
+            if data.get("score") is not None:
+                st.markdown(f"### Score: {data['score']:.2f}% (baseado em volumetria de pares NCM × UF)")
+
+            # Volumetria (pares)
+            st.markdown("#### 📊 Volumetria (Pares NCM × UF)")
+            cv1, cv2, cv3, cv4 = st.columns(4)
+            with cv1:
+                st.metric("📋 Total de Pares", data.get("total_linhas", 0))
+            with cv2:
+                st.metric("✅ Atendidos", data.get("linhas_atendidas", 0))
+            with cv3:
+                st.metric("❌ Não Atendidos", data.get("linhas_nao_atendidas", 0))
+            with cv4:
+                st.metric("⚠️ NCM Não Encontrado",
+                          data.get("linhas_nao_encontradas", 0),
+                          help="NCMs que não existem na base oficial de aderência")
+
+            # NCMs únicos
+            st.markdown("#### 🔢 NCMs Únicos")
+            cu1, cu2, cu3, cu4 = st.columns(4)
+            with cu1:
+                st.metric("Total NCMs", data.get("total_ncms_unicos", 0))
+            with cu2:
+                st.metric("Atendidos", data.get("ncms_atendidos", 0))
+            with cu3:
+                st.metric("Não Atendidos", data.get("ncms_nao_atendidos", 0))
+            with cu4:
+                st.metric("Não Encontrados", data.get("ncms_nao_encontrados", 0))
+
+            # Avisos
+            n_nao_encontrados = data.get("ncms_nao_encontrados", 0)
+            n_match_aprox = data.get("linhas_match_aproximado", 0)
+            total_linhas = data.get("total_linhas", 0)
+
+            if n_nao_encontrados > 0:
+                pct = round(data.get("linhas_nao_encontradas", 0) / total_linhas * 100, 1) if total_linhas else 0
+                st.warning(
+                    f"⚠️ **{n_nao_encontrados} NCMs únicos ({pct}% das linhas)** não existem na base oficial. "
+                    f"Verifique se esses NCMs são válidos ou se a base de aderência precisa ser atualizada."
+                )
+
+            if n_match_aprox > 0:
+                pct = round(n_match_aprox / total_linhas * 100, 1) if total_linhas else 0
+                st.info(
+                    f"🔍 **{n_match_aprox} pares ({pct}%)** foram identificados via **match aproximado** "
+                    f"(usando NCM pai de 4 ou 6 dígitos). Considere validar se a aderência herdada do capítulo é apropriada."
+                )
+
+            # Cobertura por UF
+            st.markdown(f"##### Cobertura por UF {label_uf}")
+            render_uf_table(data.get("uf_summary", {}), key_prefix)
+
+            # Tabela detalhada com filtros
+            detail = data.get("detail", [])
+            if detail:
+                rows = []
+                for r in detail:
+                    rows.append({
+                        "NCM": r.get("NCM", ""),
+                        "UF": r.get("UF", ""),
+                        "Status": r.get("Status", ""),
+                        "Modo de Match": r.get("Modo_Match") or "-",
+                        "NCM Match": r.get("NCM_Match") or "-",
+                        "Descrição": (r.get("Descricao", "") or "")[:80],
+                    })
+                df_ncm = pd.DataFrame(rows)
+
+                st.markdown("---")
+                st.markdown("##### 🔎 Detalhe por Par NCM × UF")
+                f1, f2 = st.columns([3, 2])
+                with f1:
+                    filtro_status = st.multiselect(
+                        "Filtrar por status",
+                        options=["Atendido", "Não Atendido", "NCM Não Encontrado"],
+                        default=["Não Atendido", "NCM Não Encontrado"],
+                        key=f"ncm_{key_prefix}_status",
+                    )
+                with f2:
+                    ufs_disp = sorted(df_ncm["UF"].unique().tolist())
+                    filtro_uf = st.multiselect(
+                        "Filtrar por UF",
+                        options=ufs_disp,
+                        default=ufs_disp,
+                        key=f"ncm_{key_prefix}_uf",
+                    )
+
+                df_filt = df_ncm[
+                    df_ncm["Status"].isin(filtro_status) &
+                    df_ncm["UF"].isin(filtro_uf)
+                ]
+                st.markdown(f"**Exibindo {len(df_filt)} de {len(df_ncm)} pares**")
+                st.dataframe(
+                    df_filt,
+                    use_container_width=True,
+                    hide_index=True,
+                    height=min(600, 40 + 35 * min(len(df_filt), 15)),
+                )
+
         with tab_compras:
-            nc = result["ncm_compras"]
-            if nc["total_pairs"] == 0:
-                st.info("Nenhum NCM de Compras preenchido no pré-diagnóstico (UF Fornecedor × NCM).")
-            else:
-                st.markdown(f"""
-                **{nc['total_pairs']}** pares NCM × UF analisados ·
-                **{nc['covered']}** cobertos ·
-                **{len(nc['gaps'])}** com gap
-                """)
-                st.markdown("##### Cobertura por UF do Fornecedor")
-                render_uf_table(nc.get("uf_summary", {}), "Compras")
-                if nc["gaps"]:
-                    with st.expander(f"📋 Ver {len(nc['gaps'])} gaps em detalhe"):
-                        render_gap_detail(nc["gaps"], "Compras")
+            render_ncm_tab(result["ncm_compras"], "do Fornecedor", "Compras")
 
         with tab_vendas:
-            nv = result["ncm_vendas"]
-            if nv["total_pairs"] == 0:
-                st.info("Nenhum NCM de Vendas preenchido no pré-diagnóstico (UF Cliente × NCM).")
-            else:
-                st.markdown(f"""
-                **{nv['total_pairs']}** pares NCM × UF analisados ·
-                **{nv['covered']}** cobertos ·
-                **{len(nv['gaps'])}** com gap
-                """)
-                st.markdown("##### Cobertura por UF do Cliente / Destino")
-                render_uf_table(nv.get("uf_summary", {}), "Vendas")
-                if nv["gaps"]:
-                    with st.expander(f"📋 Ver {len(nv['gaps'])} gaps em detalhe"):
-                        render_gap_detail(nv["gaps"], "Vendas")
+            render_ncm_tab(result["ncm_vendas"], "do Cliente / Destino", "Vendas")
 
         with tab_mun:
             m = result["municipios"]
