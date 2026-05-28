@@ -410,10 +410,28 @@ def load_adherence_base(path: Path) -> dict:
 
                 if all_sectors:
                     df_all = pd.concat(all_sectors, ignore_index=True)
-                    # Remove duplicatas, mantendo o maior valor de cobertura por NCM×UF
-                    # Para cada NCM, agrupa por UF e pega o máximo valor
+                    # CORRIGIDO: Quando há NCMs duplicados (vários segmentos), prioriza "Atendido"
+                    # Bug anterior: groupby().max() em strings retornava "Não Atendido" (N > A alfabético)
+                    # Lógica correta: se PELO MENOS UM segmento atende, considera atendido
+                    def consolidate_coverage(values):
+                        """Retorna 'Atendido' se qualquer valor da serie for 'Atendido', senão retorna o primeiro non-null."""
+                        for v in values:
+                            if v is None:
+                                continue
+                            v_str = str(v).strip().lower()
+                            # Remove acentos para comparação robusta
+                            import unicodedata
+                            v_norm = unicodedata.normalize('NFKD', v_str).encode('ascii', 'ignore').decode()
+                            if v_norm == 'atendido':
+                                return v  # Retorna o valor original (com case preservado)
+                        # Se nenhum atendido, retorna o primeiro não-nulo
+                        for v in values:
+                            if v is not None and str(v).strip().lower() != 'nan':
+                                return v
+                        return None
+
                     df_all_grouped = df_all.groupby("COMMODITY_CODE", as_index=False).agg({
-                        **{uf: 'max' for uf in UF_COLS if uf in df_all.columns}
+                        **{uf: consolidate_coverage for uf in UF_COLS if uf in df_all.columns}
                     })
                     sector_sheets["ALL_SECTORS"] = df_all_grouped
                     debug_print(f"[OK] Base consolidada criada com {len(df_all_grouped)} NCMs únicos de todos os setores")
