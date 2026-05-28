@@ -4,6 +4,11 @@ cookie:
   name: idt_auth_cookie
 credentials:
   usernames:
+    Conteudo:
+      email: conteudo@thomsonreuters.com
+      name: Conteudo
+      password: $2b$12$yz99heXVNeeCV.eNCXQ2C.GTUX1v2wmoUiY2Sg5cXMtl8Wf6ansE2
+      role: user
     admin:
       email: admin@thomsonreuters.com
       name: Administrador
