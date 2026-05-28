@@ -453,8 +453,6 @@ def build_excel_report(result: dict) -> bytes:
                 "NCM": g.get("NCM", ""),
                 "UF": g.get("UF", ""),
                 "Status": g.get("Status", ""),
-                "Modo de Match": g.get("Modo_Match") or "-",
-                "NCM Match": g.get("NCM_Match") or "-",
                 "Cobertura": g.get("Cobertura", ""),
                 "Descricao": g.get("Descricao", ""),
             } for g in gaps_c]
@@ -467,8 +465,6 @@ def build_excel_report(result: dict) -> bytes:
                 "NCM": g.get("NCM", ""),
                 "UF": g.get("UF", ""),
                 "Status": g.get("Status", ""),
-                "Modo de Match": g.get("Modo_Match") or "-",
-                "NCM Match": g.get("NCM_Match") or "-",
                 "Cobertura": g.get("Cobertura", ""),
                 "Descricao": g.get("Descricao", ""),
             } for g in gaps_v]
@@ -687,9 +683,8 @@ if page == "▸ Nova Análise":
             with cu4:
                 st.metric("Não Encontrados", data.get("ncms_nao_encontrados", 0))
 
-            # Avisos
+            # Aviso para NCMs não encontrados
             n_nao_encontrados = data.get("ncms_nao_encontrados", 0)
-            n_match_aprox = data.get("linhas_match_aproximado", 0)
             total_linhas = data.get("total_linhas", 0)
 
             if n_nao_encontrados > 0:
@@ -697,13 +692,6 @@ if page == "▸ Nova Análise":
                 st.warning(
                     f"⚠️ **{n_nao_encontrados} NCMs únicos ({pct}% das linhas)** não existem na base oficial. "
                     f"Verifique se esses NCMs são válidos ou se a base de aderência precisa ser atualizada."
-                )
-
-            if n_match_aprox > 0:
-                pct = round(n_match_aprox / total_linhas * 100, 1) if total_linhas else 0
-                st.info(
-                    f"🔍 **{n_match_aprox} pares ({pct}%)** foram identificados via **match aproximado** "
-                    f"(usando NCM pai de 4 ou 6 dígitos). Considere validar se a aderência herdada do capítulo é apropriada."
                 )
 
             # Cobertura por UF
@@ -719,8 +707,6 @@ if page == "▸ Nova Análise":
                         "NCM": r.get("NCM", ""),
                         "UF": r.get("UF", ""),
                         "Status": r.get("Status", ""),
-                        "Modo de Match": r.get("Modo_Match") or "-",
-                        "NCM Match": r.get("NCM_Match") or "-",
                         "Descrição": (r.get("Descricao", "") or "")[:80],
                     })
                 df_ncm = pd.DataFrame(rows)

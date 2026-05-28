@@ -977,7 +977,6 @@ def analyse_ncm(ncm_df: pd.DataFrame, uf_col: str, direction: str,
         "total_pairs": 0, "total_linhas": 0,
         "covered": 0, "linhas_atendidas": 0,
         "linhas_nao_atendidas": 0, "linhas_nao_encontradas": 0,
-        "linhas_match_aproximado": 0,
         "total_ncms_unicos": 0,
         "ncms_atendidos": 0, "ncms_nao_atendidos": 0, "ncms_nao_encontrados": 0,
         "gaps": [], "detail": [],
@@ -1002,35 +1001,16 @@ def analyse_ncm(ncm_df: pd.DataFrame, uf_col: str, direction: str,
         if not ncm_normalized or not uf or uf == "NAN":
             continue
 
-        # Determina tipo de match
+        # Apenas MATCH EXATO - sem fallback aproximado
         cov = None
         modo_match = None
         ncm_match = None  # NCM efetivamente casado na base
 
-        # 1. Match exato
         if ncm_normalized in lookup:
             cov = lookup[ncm_normalized].get(uf, None)
             if cov is not None:
                 modo_match = "exato"
                 ncm_match = ncm_normalized
-
-        # 2. Match aproximado via parent 6 dígitos
-        if modo_match is None and len(ncm_normalized) >= 6:
-            parent_ncm = ncm_normalized[:6]
-            if parent_ncm in lookup:
-                cov = lookup[parent_ncm].get(uf, None)
-                if cov is not None:
-                    modo_match = "parent_6"
-                    ncm_match = parent_ncm
-
-        # 3. Match aproximado via parent 4 dígitos
-        if modo_match is None and len(ncm_normalized) >= 4:
-            parent_ncm = ncm_normalized[:4]
-            if parent_ncm in lookup:
-                cov = lookup[parent_ncm].get(uf, None)
-                if cov is not None:
-                    modo_match = "parent_4"
-                    ncm_match = parent_ncm
 
         # Determina Status
         if modo_match is None:
@@ -1063,7 +1043,6 @@ def analyse_ncm(ncm_df: pd.DataFrame, uf_col: str, direction: str,
     linhas_atendidas = sum(1 for r in results if r["Status"] == "Atendido")
     linhas_nao_atendidas = sum(1 for r in results if r["Status"] == "Não Atendido")
     linhas_nao_encontradas = sum(1 for r in results if r["Status"] == "NCM Não Encontrado")
-    linhas_match_aproximado = sum(1 for r in results if r["Modo_Match"] in ("parent_6", "parent_4"))
 
     # Totais por NCMs ÚNICOS
     ncms_unicos = {r["NCM_Normalizado"]: r["Status"] for r in results}
@@ -1105,7 +1084,6 @@ def analyse_ncm(ncm_df: pd.DataFrame, uf_col: str, direction: str,
         "linhas_atendidas": linhas_atendidas,
         "linhas_nao_atendidas": linhas_nao_atendidas,
         "linhas_nao_encontradas": linhas_nao_encontradas,
-        "linhas_match_aproximado": linhas_match_aproximado,
 
         # NCMs únicos - NOVO
         "total_ncms_unicos": total_ncms_unicos,
