@@ -318,11 +318,12 @@ def load_adherence_base(path: Path) -> dict:
 
             # CRÍTICO: Apenas municípios com Aderencia cobertos
             # Aceita tanto número (1) quanto texto ("Atendido", "Atentido", etc)
+            # IMPORTANTE: Verifica que NÃO começa com "nao" para evitar "Não Atendido"
             aderencia_str = normalize(str(aderencia_raw))
             is_covered = (
                 aderencia_raw == 1 or  # Aceita número 1
-                "atend" in aderencia_str or  # Aceita "Atendido" (correto)
-                "atent" in aderencia_str  # Aceita "Atentido" (typo na base)
+                (aderencia_str.startswith("atend") and not aderencia_str.startswith("nao")) or  # Aceita "Atendido" mas não "Não Atendido"
+                (aderencia_str.startswith("atent") and not aderencia_str.startswith("nao"))  # Aceita "Atentido" (typo) mas não "Não Atentido"
             )
 
             if not is_covered:
