@@ -1,0 +1,11 @@
+# Forçar limpeza de cache no Streamlit Cloud
+# Isso garante que a nova versão do código e planilha sejam usadas
+
+[server]
+# Desabilita cache de data loader
+enableCORS = false
+maxUploadSize = 200
+
+[runner]
+# Força reload do script
+fastReruns = false
