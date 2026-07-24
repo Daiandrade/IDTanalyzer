@@ -184,12 +184,12 @@ def _build_styles():
 
 
 def _card_number_style(color):
-    return ParagraphStyle('CardNumber', fontName='Clario-Bold', fontSize=26,
+    return ParagraphStyle('CardNumber', fontName='Clario-Bold', fontSize=26, leading=32,
                            textColor=color, alignment=TA_CENTER)
 
 
 def _card_label_style():
-    return ParagraphStyle('CardLabel', fontName='Clario', fontSize=8,
+    return ParagraphStyle('CardLabel', fontName='Clario', fontSize=8, leading=11,
                            textColor=TR_BLACK, alignment=TA_CENTER)
 
 
@@ -366,8 +366,10 @@ def generate_pdf(result: dict, filename: str = "relatorio_idt.pdf",
             ('LINEABOVE', (0, 0), (-1, 0), 3, fg),
             ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ('TOPPADDING', (0, 0), (-1, 0), 10),
-            ('BOTTOMPADDING', (0, -1), (-1, -1), 10),
+            ('TOPPADDING', (0, 0), (-1, 0), 14),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
+            ('TOPPADDING', (0, 1), (-1, 1), 4),
+            ('BOTTOMPADDING', (0, 1), (-1, 1), 14),
         ]))
         card_row.append(cell)
 
@@ -650,10 +652,6 @@ def generate_pdf(result: dict, filename: str = "relatorio_idt.pdf",
     if nc.get('gaps'):
         render_ncm_detail_table(nc['gaps'], f"NCM Compras - TODOS os Gaps ({len(nc['gaps'])} pares)")
 
-    covered_items_c = [item for item in nc.get('detail', []) if item.get('Coberto', False)]
-    if covered_items_c:
-        render_ncm_detail_table(covered_items_c, f"NCM Compras - Itens com Cobertura Completa ({len(covered_items_c)} pares)")
-
     # ── NCM Vendas ──
     story.append(PageBreak())
     story.append(Paragraph("NCM Vendas - Análise Detalhada", s['subheading']))
@@ -712,6 +710,14 @@ def generate_pdf(result: dict, filename: str = "relatorio_idt.pdf",
             col_widths=[12 * cm, 3.5 * cm], title="", story=story,
             heading_style=s['heading'], items_per_page=40
         )
+    else:
+        story.append(Paragraph("Municípios com GAP - Não Cobertos", s['subsub']))
+        story.append(Spacer(1, 0.2 * cm))
+        story.append(Paragraph(
+            "Nenhum município fora do escopo — todos os municípios informados estão cobertos pelo IDT.",
+            s['body']
+        ))
+        story.append(Spacer(1, 0.5 * cm))
 
     if m.get('in_scope'):
         story.append(PageBreak())
