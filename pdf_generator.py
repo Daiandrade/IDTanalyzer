@@ -97,6 +97,24 @@ def cfop_standard_status(cfop_value, non_standard_cfops):
     return "Standard"
 
 
+def split_cfops_by_direction(cfop_list):
+    """
+    Separa uma lista de CFOPs em Entrada (Compras) e Saída (Vendas)
+    conforme a convenção oficial do primeiro dígito do CFOP:
+    1-3 = Entrada · 5-7 = Saída
+    """
+    entrada, saida = [], []
+    for cfop in cfop_list:
+        digits = re.sub(r'[^\d]', '', str(cfop))
+        if not digits:
+            continue
+        if digits[0] in '123':
+            entrada.append(cfop)
+        elif digits[0] in '567':
+            saida.append(cfop)
+    return sorted(entrada), sorted(saida)
+
+
 def create_paginated_table(data_rows, columns, col_widths, title, story, heading_style, items_per_page=25):
     """
     Cria tabela paginada para listas longas.
@@ -599,6 +617,45 @@ def generate_pdf(result: dict, filename: str = "relatorio_idt.pdf",
     story.append(PageBreak())
     story.append(Paragraph("Detalhamento da Aderência", s['heading']))
 
+    cfops_entrada_std, cfops_saida_std = split_cfops_by_direction(cfops.get('standard', []))
+
+    def render_cfop_standard_list(cfop_list, title_text):
+        story.append(Paragraph(title_text, s['subheading']))
+        story.append(Spacer(1, 0.2 * cm))
+        if not cfop_list:
+            story.append(Paragraph("Nenhum CFOP standard identificado para esta direção.", s['body']))
+            story.append(Spacer(1, 0.4 * cm))
+            return
+        rows = [[cfop, "Atendido (Standard)"] for cfop in cfop_list]
+        num_cols = 3
+        rows_per_col = (len(rows) + num_cols - 1) // num_cols
+        grid_data = [["CFOP", "Status"] * num_cols]
+        for i in range(rows_per_col):
+            row = []
+            for col in range(num_cols):
+                idx = col * rows_per_col + i
+                row.extend(rows[idx] if idx < len(rows) else ["", ""])
+            grid_data.append(row)
+        table = Table(grid_data, colWidths=[2 * cm, 3.5 * cm] * num_cols)
+        table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), TR_GREEN),
+            ('TEXTCOLOR', (0, 0), (-1, 0), TR_WHITE),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Clario-Bold'),
+            ('FONTNAME', (0, 1), (-1, -1), 'Clario'),
+            ('FONTSIZE', (0, 0), (-1, -1), 8),
+            ('GRID', (0, 0), (-1, -1), 0.3, TR_BORDER_GREY),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [TR_WHITE, TR_LIGHT_TEAL]),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('TOPPADDING', (0, 0), (-1, -1), 4),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+        ]))
+        story.append(table)
+        story.append(Spacer(1, 0.5 * cm))
+
+    # ── CFOPs Atendidos - Entrada (Compras) ──
+    render_cfop_standard_list(cfops_entrada_std, f"CFOPs Atendidos via Standard - Entrada ({len(cfops_entrada_std)} CFOPs)")
+
     # ── NCM Compras ──
     story.append(Paragraph("NCM Compras - Análise Detalhada", s['subheading']))
     story.append(Spacer(1, 0.3 * cm))
@@ -654,6 +711,10 @@ def generate_pdf(result: dict, filename: str = "relatorio_idt.pdf",
 
     # ── NCM Vendas ──
     story.append(PageBreak())
+
+    # ── CFOPs Atendidos - Saída (Vendas) ──
+    render_cfop_standard_list(cfops_saida_std, f"CFOPs Atendidos via Standard - Saída ({len(cfops_saida_std)} CFOPs)")
+
     story.append(Paragraph("NCM Vendas - Análise Detalhada", s['subheading']))
     story.append(Spacer(1, 0.3 * cm))
     story.append(Paragraph(
