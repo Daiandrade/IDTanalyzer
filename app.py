@@ -18,6 +18,7 @@ import streamlit_authenticator as stauth
 from idt_engine import run_analysis
 import db_manager
 import pdf_generator
+from translations import get_translation, get_all_translations
 
 # ─────────────────────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -26,6 +27,16 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="expanded",
 )
+
+# ── Language Configuration ────────────────────────────────────────────────────
+# Initialize language in session state
+if "language" not in st.session_state:
+    st.session_state.language = "pt"
+
+# Helper function to get translations
+def t(key: str) -> str:
+    """Get translation for current language"""
+    return get_translation(key, st.session_state.language)
 
 # ── Thomson Reuters Theme ─────────────────────────────────────────────────────
 st.markdown("""
@@ -225,8 +236,8 @@ def load_auth_config():
     """Load authentication configuration"""
     config_path = Path("config_auth.yaml")
     if not config_path.exists():
-        st.error("❌ Arquivo config_auth.yaml não encontrado!")
-        st.info("Execute: python generate_password.py para gerar senhas")
+        st.error(t("config_not_found"))
+        st.info(t("generate_password_info"))
         st.stop()
 
     with open(config_path) as file:
@@ -260,11 +271,11 @@ name = st.session_state.get("name")
 username = st.session_state.get("username")
 
 if authentication_status == False:
-    st.error('❌ Usuário ou senha incorretos')
+    st.error(t('auth_error'))
     st.stop()
 
 if authentication_status == None:
-    st.warning('⚠️ Por favor, faça login para acessar o sistema')
+    st.warning(t('auth_warning'))
     st.stop()
 
 # ── User logged in ────────────────────────────────────────────────────────────
@@ -279,21 +290,36 @@ with st.sidebar:
     """, unsafe_allow_html=True)
 
     st.markdown("---")
-    st.write(f'**Bem-vindo, {name}!**')
-    authenticator.logout(button_name='Sair', location='sidebar')
+
+    # Language Selector
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button(t("portuguese"), use_container_width=True,
+                    type="primary" if st.session_state.language == "pt" else "secondary"):
+            st.session_state.language = "pt"
+            st.rerun()
+    with col2:
+        if st.button(t("english"), use_container_width=True,
+                    type="primary" if st.session_state.language == "en" else "secondary"):
+            st.session_state.language = "en"
+            st.rerun()
+
+    st.markdown("---")
+    st.write(f'**{t("welcome")}, {name}!**')
+    authenticator.logout(button_name=t('logout'), location='sidebar')
     st.markdown("---")
 
     # Navigation
-    st.markdown("### Navegação")
+    st.markdown(f"### {t('navigation')}")
     page = st.radio(
         "Menu",
-        ["▸ Nova Análise", "▸ Histórico", "▸ Configurações"],
+        [t("new_analysis"), t("history"), t("settings")],
         label_visibility="collapsed"
     )
 
     st.markdown("---")
-    st.caption(f"Usuário: **{username}**")
-    st.caption(f"Perfil: **{config['credentials']['usernames'][username].get('role', 'user')}**")
+    st.caption(f"{t('user')}: **{username}**")
+    st.caption(f"{t('profile')}: **{config['credentials']['usernames'][username].get('role', 'user')}**")
 
 
 # ── Page Header ───────────────────────────────────────────────────────────────
@@ -533,7 +559,7 @@ def build_excel_report(result: dict) -> bytes:
 # PAGE: Nova Análise
 # ═════════════════════════════════════════════════════════════════════════════
 
-if page == "▸ Nova Análise":
+if page == t("new_analysis"):
     render_page_header(
         "IDT Analyzer",
         "Analisador de Aderência · Onesource Determination"
@@ -551,11 +577,19 @@ if page == "▸ Nova Análise":
 
     st.markdown("### 📝 Dados do Cliente")
 
-    cliente_nome = st.text_input(
-        "Nome do Cliente",
-        placeholder="Digite o nome do cliente ou empresa...",
-        help="Este nome será usado para identificar a análise no histórico"
-    )
+    col_nome, col_seg = st.columns(2)
+    with col_nome:
+        cliente_nome = st.text_input(
+            "Nome do Cliente",
+            placeholder="Digite o nome do cliente ou empresa...",
+            help="Este nome será usado para identificar a análise no histórico"
+        )
+    with col_seg:
+        cliente_segmento = st.text_input(
+            "Segmento",
+            placeholder="Ex: Varejo, Indústria, Serviços...",
+            help="Segmento do cliente (opcional)"
+        )
 
     st.markdown("### 📂 Arquivo do Pré-Diagnóstico")
     st.write("Faça upload do arquivo Excel preenchido pelo cliente")
@@ -595,7 +629,8 @@ if page == "▸ Nova Análise":
                         result=result,
                         arquivo_prediag=file_diag.name,
                         arquivo_aderencia="Aderencia.xlsm (Sistema)",
-                        cliente_nome_custom=cliente_nome.strip()
+                        cliente_nome_custom=cliente_nome.strip(),
+                        cliente_segmento_custom=cliente_segmento.strip() or None
                     )
                     st.session_state['last_result'] = result
                     st.session_state['last_analysis_id'] = analysis_id
@@ -936,7 +971,7 @@ if page == "▸ Nova Análise":
 # PAGE: Histórico
 # ═════════════════════════════════════════════════════════════════════════════
 
-elif page == "▸ Histórico":
+elif page == t("history"):
     render_page_header("Histórico de Análises", "Consulte e gerencie análises anteriores")
 
     # Verifica se é admin

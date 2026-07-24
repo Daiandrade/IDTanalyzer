@@ -923,31 +923,32 @@ def load_prediag(path: Path) -> dict:
             # Ler sheet com header ou a partir da primeira linha de dados
             df_cfop = pd.read_excel(path, sheet_name=cfop_sheet, engine="openpyxl", header=header_row_cfop)
 
-            # IMPORTANTE: Usar colunas A (índice 0) e C (índice 2) como solicitado
-            # Coluna A = CFOP, Coluna C = Descrição (para referência)
+            # Usar colunas A (índice 0) e C (índice 2)
             if len(df_cfop.columns) >= 3:
-                col_a = df_cfop.iloc[:, 0]  # Coluna A (índice 0)
-                col_c = df_cfop.iloc[:, 2]  # Coluna C (índice 2)
+                col_a = df_cfop.iloc[:, 0]  # Coluna A
+                col_c = df_cfop.iloc[:, 2]  # Coluna C
 
-                debug_print(f"[INFO] Lendo CFOPs da sheet '{cfop_sheet}' - Coluna A (CFOP) e Coluna C (Descrição)")
+                debug_print(f"[INFO] Lendo CFOPs da sheet '{cfop_sheet}' - Colunas A e C")
 
-                # Extrair CFOPs da coluna A
-                for idx, cfop_value in enumerate(col_a):
-                    if pd.notna(cfop_value):
-                        cfop_str = str(cfop_value).strip()
-                        # Limpa CFOP (remove pontos, espaços, etc) e valida formato (4 dígitos)
-                        cfop_clean = re.sub(r'[^\d]', '', cfop_str)
+                def extrair_cfop(valor):
+                    if pd.isna(valor):
+                        return None
+                    cfop_clean = re.sub(r'[^\d]', '', str(valor).strip())
+                    if cfop_clean and len(cfop_clean) == 4 and cfop_clean[0] in '1234567':
+                        return cfop_clean
+                    return None
 
-                        # Valida se é um CFOP válido (4 dígitos começando com 1-7)
-                        if cfop_clean and len(cfop_clean) == 4 and cfop_clean[0] in '1234567':
-                            cfops_declarados.add(cfop_clean)
+                for cfop_value in col_a:
+                    c = extrair_cfop(cfop_value)
+                    if c:
+                        cfops_declarados.add(c)
 
-                            # Log para debug (primeiros 5 apenas)
-                            if len(cfops_declarados) <= 5:
-                                desc = str(col_c.iloc[idx]) if idx < len(col_c) and pd.notna(col_c.iloc[idx]) else ""
-                                debug_print(f"   - CFOP {cfop_clean}: {desc[:50]}")
+                for cfop_value in col_c:
+                    c = extrair_cfop(cfop_value)
+                    if c:
+                        cfops_declarados.add(c)
 
-                debug_print(f"[OK] {len([c for c in cfops_declarados if len(c) == 4])} CFOPs adicionados da sheet específica")
+                debug_print(f"[OK] {len([c for c in cfops_declarados if len(c) == 4])} CFOPs adicionados da sheet específica (colunas A e C)")
             else:
                 debug_print(f"[AVISO] Sheet '{cfop_sheet}' não tem pelo menos 3 colunas (A, B, C)")
 

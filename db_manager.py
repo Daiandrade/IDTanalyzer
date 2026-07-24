@@ -138,7 +138,8 @@ def save_analysis(
     result: dict,
     arquivo_prediag: str,
     arquivo_aderencia: str,
-    cliente_nome_custom: str = None
+    cliente_nome_custom: str = None,
+    cliente_segmento_custom: str = None
 ) -> int:
     """
     Save analysis result to database
@@ -153,6 +154,7 @@ def save_analysis(
     cfops = result.get("cfops", {})
 
     cliente_nome = cliente_nome_custom if cliente_nome_custom else general.get("segmento", "")
+    cliente_segmento = cliente_segmento_custom if cliente_segmento_custom else general.get("segmento", "")
 
     with engine.connect() as conn:
         # INSERT compatível com PostgreSQL e SQLite
@@ -177,7 +179,7 @@ def save_analysis(
         result_proxy = conn.execute(query, {
             "usuario": usuario,
             "cliente_nome": cliente_nome,
-            "cliente_segmento": general.get("segmento", ""),
+            "cliente_segmento": cliente_segmento,
             "cliente_estados": general.get("estados", ""),
             "score_geral": result.get("overall_score"),
             "score_ncm_compras": ncm_c.get("score"),
