@@ -747,10 +747,6 @@ def generate_pdf(result: dict, filename: str = "relatorio_idt.pdf",
     if nv.get('gaps'):
         render_ncm_detail_table(nv['gaps'], f"NCM Vendas - TODOS os Gaps ({len(nv['gaps'])} pares)")
 
-    covered_items_v = [item for item in nv.get('detail', []) if item.get('Coberto', False)]
-    if covered_items_v:
-        render_ncm_detail_table(covered_items_v, f"NCM Vendas - Itens com Cobertura Completa ({len(covered_items_v)} pares)")
-
     # ── Municípios ──
     story.append(PageBreak())
     story.append(Paragraph("Municípios ISS - Análise Detalhada", s['heading']))
