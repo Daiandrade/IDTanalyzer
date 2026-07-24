@@ -635,6 +635,7 @@ if page == t("new_analysis"):
                     st.session_state['last_result'] = result
                     st.session_state['last_analysis_id'] = analysis_id
                     st.session_state['last_cliente_nome'] = cliente_nome.strip()
+                    st.session_state['last_cliente_segmento'] = cliente_segmento.strip()
 
                 except Exception as e:
                     import traceback
@@ -955,9 +956,10 @@ if page == t("new_analysis"):
 
         with col_pdf:
             with st.spinner("Gerando PDF..."):
-                # Passa nome do cliente para o PDF
+                # Passa nome e segmento do cliente para o PDF
                 nome_cliente = st.session_state.get('last_cliente_nome')
-                pdf_bytes = pdf_generator.generate_pdf(result, cliente_nome=nome_cliente)
+                segmento_cliente = st.session_state.get('last_cliente_segmento')
+                pdf_bytes = pdf_generator.generate_pdf(result, cliente_nome=nome_cliente, cliente_segmento=segmento_cliente)
             st.download_button(
                 "📄 Baixar Relatório PDF Executivo",
                 data=pdf_bytes,

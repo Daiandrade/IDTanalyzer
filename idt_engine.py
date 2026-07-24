@@ -895,9 +895,12 @@ def load_prediag(path: Path) -> dict:
             if cfop_str and cfop_str.lower() != "nan":
                 cfops_declarados.add(cfop_str)
 
-    # REGRA 2: Coletar CFOPs de uma sheet específica de CFOP (colunas A e C)
+    # REGRA 2: Coletar CFOPs de uma sheet específica de CFOP
+    # Coluna A = CFOPs de Entradas (Compras) | Coluna C = CFOPs de Saídas (Vendas)
     # Procura por sheet que contenha "CFOP" no nome
     cfop_sheet = find_sheet_by_keywords(all_sheets, ["cfop"], SHEET_SYNONYMS, "CFOP")
+    cfops_entrada = set()
+    cfops_saida = set()
 
     if cfop_sheet:
         try:
@@ -923,12 +926,12 @@ def load_prediag(path: Path) -> dict:
             # Ler sheet com header ou a partir da primeira linha de dados
             df_cfop = pd.read_excel(path, sheet_name=cfop_sheet, engine="openpyxl", header=header_row_cfop)
 
-            # Usar colunas A (índice 0) e C (índice 2)
+            # Coluna A (índice 0) = CFOPs de Entradas/Compras | Coluna C (índice 2) = CFOPs de Saídas/Vendas
             if len(df_cfop.columns) >= 3:
-                col_a = df_cfop.iloc[:, 0]  # Coluna A
-                col_c = df_cfop.iloc[:, 2]  # Coluna C
+                col_a = df_cfop.iloc[:, 0]  # Coluna A - Entradas (Compras)
+                col_c = df_cfop.iloc[:, 2]  # Coluna C - Saídas (Vendas)
 
-                debug_print(f"[INFO] Lendo CFOPs da sheet '{cfop_sheet}' - Colunas A e C")
+                debug_print(f"[INFO] Lendo CFOPs da sheet '{cfop_sheet}' - Coluna A (Entradas/Compras) e Coluna C (Saídas/Vendas)")
 
                 def extrair_cfop(valor):
                     if pd.isna(valor):
@@ -941,14 +944,16 @@ def load_prediag(path: Path) -> dict:
                 for cfop_value in col_a:
                     c = extrair_cfop(cfop_value)
                     if c:
+                        cfops_entrada.add(c)
                         cfops_declarados.add(c)
 
                 for cfop_value in col_c:
                     c = extrair_cfop(cfop_value)
                     if c:
+                        cfops_saida.add(c)
                         cfops_declarados.add(c)
 
-                debug_print(f"[OK] {len([c for c in cfops_declarados if len(c) == 4])} CFOPs adicionados da sheet específica (colunas A e C)")
+                debug_print(f"[OK] {len(cfops_entrada)} CFOPs de Entrada (col. A) + {len(cfops_saida)} CFOPs de Saída (col. C) adicionados")
             else:
                 debug_print(f"[AVISO] Sheet '{cfop_sheet}' não tem pelo menos 3 colunas (A, B, C)")
 
@@ -963,6 +968,8 @@ def load_prediag(path: Path) -> dict:
         ncm_vendas=ncm_vendas,
         municipios_cliente=mun_rows,
         cfops_declarados=sorted(cfops_declarados),
+        cfops_entrada=sorted(cfops_entrada),  # CFOPs de Entradas/Compras (coluna A da sheet CFOP)
+        cfops_saida=sorted(cfops_saida),      # CFOPs de Saídas/Vendas (coluna C da sheet CFOP)
         _debug_sheets=detection_log,  # Para debug: mostra quais sheets foram detectadas
         _debug_all_sheets=all_sheets,  # Para debug: lista todas as sheets do arquivo
         _debug_columns=columns_info,  # Para debug: colunas encontradas em cada sheet
@@ -1053,6 +1060,7 @@ def analyse_ncm(ncm_df: pd.DataFrame, uf_col: str, direction: str,
             "Status": status,
             "Modo_Match": modo_match,
             "Descricao": str(row.get("Descricao", "")),
+            "CFOP": str(row.get("CFOP", "")).strip() if pd.notna(row.get("CFOP", None)) else "",
         })
 
     if not results:
