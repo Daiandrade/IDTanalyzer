@@ -335,8 +335,10 @@ def generate_pdf(result: dict, filename: str = "relatorio_idt.pdf",
     if nc.get('gaps') or nv.get('gaps'):
         total_gaps = len(nc.get('gaps', [])) + len(nv.get('gaps', []))
         findings.append(f"• <b>{total_gaps} pares NCM×UF</b> não possuem cobertura completa e requerem atenção.")
-    if m.get('gaps'):
-        findings.append(f"• <b>{len(m['gaps'])} municípios</b> não estão cobertos pela lista de aderência standard.")
+    if m.get('out_of_scope'):
+        findings.append(f"• <b>{len(m['out_of_scope'])} municípios</b> não estão cobertos pela lista de aderência standard.")
+    if m.get('invalid'):
+        findings.append(f"• <b>{len(m['invalid'])} municípios</b> possuem UF não reconhecida/inválida e não puderam ser validados.")
     if cfops.get('alertas'):
         findings.append(f"• <b>{len(cfops['alertas'])} CFOPs</b> requerem customização (operações não-standard).")
     nc_score = nc.get('score')
@@ -367,18 +369,21 @@ def generate_pdf(result: dict, filename: str = "relatorio_idt.pdf",
 
     attention_cards = [
         (len(nc.get('gaps', [])) + len(nv.get('gaps', [])), "Pares NCM×UF\nnão atendidos", TR_ORANGE, TR_LIGHT_AMBER),
-        (len(m.get('gaps', [])), "Municípios\nfora do escopo", TR_DARK_GOLD, TR_LIGHT_GOLD),
+        (len(m.get('out_of_scope', [])), "Municípios\nfora do escopo", TR_DARK_GOLD, TR_LIGHT_GOLD),
+        (len(m.get('invalid', [])), "Municípios\nnão entendidos (UF inválida)", TR_DARK_AMBER, TR_LIGHT_AMBER),
         (len(cfops.get('alertas', [])), "CFOPs não-standard\n(customização)", TR_DARK_AMBER, TR_LIGHT_AMBER),
         (sum(1 for csts in result.get('cst_coverage', {}).values()
              for v in csts.values() if not v), "CSTs\nnão atendidos", TR_DARK_SKY, TR_LIGHT_SKY),
     ]
+
+    card_width = 17 * cm / len(attention_cards)
 
     card_row = []
     for count, label, fg, bg in attention_cards:
         cell = Table([
             [Paragraph(str(count), _card_number_style(fg))],
             [Paragraph(label.replace("\n", "<br/>"), _card_label_style())],
-        ], colWidths=[4 * cm])
+        ], colWidths=[card_width - 0.25 * cm])
         cell.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, -1), bg),
             ('LINEABOVE', (0, 0), (-1, 0), 3, fg),
@@ -391,7 +396,7 @@ def generate_pdf(result: dict, filename: str = "relatorio_idt.pdf",
         ]))
         card_row.append(cell)
 
-    cards_table = Table([card_row], colWidths=[4.25 * cm] * 4)
+    cards_table = Table([card_row], colWidths=[card_width] * len(attention_cards))
     cards_table.setStyle(TableStyle([
         ('VALIGN', (0, 0), (-1, -1), 'TOP'),
         ('LEFTPADDING', (0, 0), (-1, -1), 3),
@@ -473,16 +478,8 @@ def generate_pdf(result: dict, filename: str = "relatorio_idt.pdf",
                 ))
             story.append(Spacer(1, 0.3 * cm))
 
-    if m.get('gaps'):
-        story.append(Paragraph("Municípios Não Atendidos", s['subheading']))
-        story.append(Spacer(1, 0.2 * cm))
-        story.append(Paragraph(
-            f"<b>{len(m['gaps'])} municípios</b> não estão cobertos pela lista de aderência standard:",
-            s['body']
-        ))
-        story.append(Spacer(1, 0.3 * cm))
-
-        mun_list = sorted(m['gaps'])[:20]
+    def render_municipios_grid(city_list, limit=20):
+        mun_list = sorted(city_list)[:limit]
         num_cols = 3
         rows_per_col = (len(mun_list) + num_cols - 1) // num_cols
         grid_data = []
@@ -504,9 +501,30 @@ def generate_pdf(result: dict, filename: str = "relatorio_idt.pdf",
                 ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
             ]))
             story.append(mun_table)
-            if len(m['gaps']) > 20:
-                story.append(Paragraph(f"... e mais {len(m['gaps']) - 20} municípios (ver Detalhamento da Aderência)", s['caption']))
+            if len(city_list) > limit:
+                story.append(Paragraph(f"... e mais {len(city_list) - limit} municípios (ver Detalhamento da Aderência)", s['caption']))
             story.append(Spacer(1, 0.5 * cm))
+
+    if m.get('out_of_scope'):
+        story.append(Paragraph("Municípios Não Atendidos", s['subheading']))
+        story.append(Spacer(1, 0.2 * cm))
+        story.append(Paragraph(
+            f"<b>{len(m['out_of_scope'])} municípios</b> não estão cobertos pela lista de aderência standard:",
+            s['body']
+        ))
+        story.append(Spacer(1, 0.3 * cm))
+        render_municipios_grid(m['out_of_scope'])
+
+    if m.get('invalid'):
+        story.append(Paragraph("Municípios Não Entendidos (UF Inválida)", s['subheading']))
+        story.append(Spacer(1, 0.2 * cm))
+        story.append(Paragraph(
+            f"<b>{len(m['invalid'])} municípios</b> possuem UF não reconhecida ou não informada e não puderam "
+            f"ser validados contra a lista de aderência:",
+            s['body']
+        ))
+        story.append(Spacer(1, 0.3 * cm))
+        render_municipios_grid(m['invalid'])
 
     cst_cov = result.get('cst_coverage', {})
     cst_nao_atendidos = {t: {c: ok for c, ok in csts.items() if not ok} for t, csts in cst_cov.items()}
@@ -603,8 +621,10 @@ def generate_pdf(result: dict, filename: str = "relatorio_idt.pdf",
     • Cobertura &lt; 100: Requer análise (gap parcial ou total)<br/>
     • Cobertura ausente: NCM não mapeado na base (gap crítico)<br/><br/>
     <b>Critérios de Municípios:</b><br/>
-    • In-scope: Município está na lista de cidades com ISS configurado<br/>
-    • Out-of-scope: Município não está na cobertura padrão (decisão do time necessária)<br/><br/>
+    • Atendido: Município está na lista de cidades com ISS configurado<br/>
+    • Não Atendido: Município não está na cobertura padrão (decisão do time necessária)<br/>
+    • Não Entendido (UF inválida): UF informada não é uma UF válida do Brasil e não pôde ser validada
+    contra a lista de aderência — conta como não atendida no score<br/><br/>
     <b>Nota sobre CFOPs:</b><br/>
     CFOPs são analisados de forma qualitativa (não entram no score geral). O relatório identifica operações
     standard atendidas pelo IDT e operações não-standard que requerem customização.
@@ -753,15 +773,17 @@ def generate_pdf(result: dict, filename: str = "relatorio_idt.pdf",
     story.append(Spacer(1, 0.3 * cm))
     story.append(Paragraph(
         f"<b>{len(m.get('in_scope', []))} municípios</b> cobertos pelo IDT · "
-        f"<b>{len(m.get('gaps', []))} municípios</b> com GAP (não cobertos) ({(m.get('score') or 0):.1f}% cobertura)",
+        f"<b>{len(m.get('out_of_scope', []))} municípios</b> com GAP (não cobertos) · "
+        f"<b>{len(m.get('invalid', []))} municípios</b> não entendidos (UF inválida) "
+        f"({(m.get('score') or 0):.1f}% cobertura)",
         s['body']
     ))
     story.append(Spacer(1, 0.5 * cm))
 
-    if m.get('gaps'):
-        story.append(Paragraph(f"Municípios com GAP - Não Cobertos ({len(m['gaps'])} cidades)", s['subsub']))
+    if m.get('out_of_scope'):
+        story.append(Paragraph(f"Municípios com GAP - Não Cobertos ({len(m['out_of_scope'])} cidades)", s['subsub']))
         story.append(Spacer(1, 0.2 * cm))
-        gap_rows = [[city, "Não Coberto"] for city in sorted(m['gaps'])]
+        gap_rows = [[city, "Não Coberto"] for city in sorted(m['out_of_scope'])]
         create_paginated_table(
             data_rows=gap_rows, columns=["Município (UF)", "Status"],
             col_widths=[12 * cm, 3.5 * cm], title="", story=story,
@@ -774,6 +796,24 @@ def generate_pdf(result: dict, filename: str = "relatorio_idt.pdf",
             "Nenhum município fora do escopo — todos os municípios informados estão cobertos pelo IDT.",
             s['body']
         ))
+        story.append(Spacer(1, 0.5 * cm))
+
+    if m.get('invalid'):
+        story.append(Paragraph(f"Municípios Não Entendidos - UF Inválida ({len(m['invalid'])} cidades)", s['subsub']))
+        story.append(Spacer(1, 0.2 * cm))
+        story.append(Paragraph(
+            "Linhas cuja UF informada não corresponde a uma UF válida do Brasil (ex.: \"NI\", \"NA\" ou "
+            "código incorreto). Não puderam ser validadas contra a lista de aderência e contam como "
+            "não atendidas no score.",
+            s['body']
+        ))
+        story.append(Spacer(1, 0.2 * cm))
+        invalid_rows = [[city, "Não Entendido"] for city in sorted(m['invalid'])]
+        create_paginated_table(
+            data_rows=invalid_rows, columns=["Município (UF)", "Status"],
+            col_widths=[12 * cm, 3.5 * cm], title="", story=story,
+            heading_style=s['heading'], items_per_page=40
+        )
         story.append(Spacer(1, 0.5 * cm))
 
     if m.get('in_scope'):
