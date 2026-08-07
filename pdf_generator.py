@@ -6,6 +6,7 @@ import io
 import os
 import re
 from datetime import datetime
+from xml.sax.saxutils import escape as _xml_escape
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
 from reportlab.lib.units import cm
@@ -115,6 +116,21 @@ def split_cfops_by_direction(cfop_list):
     return sorted(entrada), sorted(saida)
 
 
+_CELL_TEXT_STYLE = ParagraphStyle(
+    'CellText', fontName='Clario', fontSize=8, leading=10, alignment=TA_LEFT, wordWrap='CJK'
+)
+
+
+def cell_text(value, style=None):
+    """
+    Envolve texto de célula em um Paragraph para permitir quebra de linha
+    automática dentro da largura da coluna, em vez de vazar da caixa.
+    Não trunca o conteúdo — o texto completo é sempre preservado.
+    """
+    text = "" if value is None else str(value)
+    return Paragraph(_xml_escape(text), style or _CELL_TEXT_STYLE)
+
+
 def create_paginated_table(data_rows, columns, col_widths, title, story, heading_style, items_per_page=25):
     """
     Cria tabela paginada para listas longas.
@@ -142,7 +158,10 @@ def create_paginated_table(data_rows, columns, col_widths, title, story, heading
             ))
             story.append(Spacer(1, 0.2 * cm))
 
-        page_data = [columns] + data_rows[start_idx:end_idx]
+        page_data = [columns] + [
+            [cell_text(cell) for cell in row]
+            for row in data_rows[start_idx:end_idx]
+        ]
 
         table = Table(page_data, colWidths=col_widths)
         table.setStyle(TableStyle([
@@ -253,8 +272,8 @@ def generate_pdf(result: dict, filename: str = "relatorio_idt.pdf",
     story.append(Spacer(1, 1 * cm))
 
     client_info = [
-        ["Cliente", nome_cliente],
-        ["Segmento", segmento_exibicao],
+        ["Cliente", cell_text(nome_cliente)],
+        ["Segmento", cell_text(segmento_exibicao)],
         ["Data da Análise", datetime.now().strftime("%d/%m/%Y")],
     ]
     client_table = Table(client_info, colWidths=[4.5 * cm, 12.5 * cm])
@@ -454,11 +473,13 @@ def generate_pdf(result: dict, filename: str = "relatorio_idt.pdf",
             rows = []
             for gap in gaps[:10]:
                 desc = gap.get('Descricao', '')
-                desc = desc[:45] + '...' if len(desc) > 45 else desc
                 cov = gap.get('Cobertura', '')
                 cov_str = f"{cov}%" if cov is not None and cov != '' else "N/A"
                 cfop_status = cfop_standard_status(gap.get('CFOP'), non_standard_cfops)
-                rows.append([gap.get('NCM', ''), gap.get('UF', ''), desc, gap.get('CFOP', '') or '—', cfop_status, cov_str])
+                rows.append([
+                    cell_text(gap.get('NCM', '')), cell_text(gap.get('UF', '')), cell_text(desc),
+                    cell_text(gap.get('CFOP', '') or '—'), cell_text(cfop_status), cell_text(cov_str),
+                ])
             table = Table(rows, colWidths=[2.2 * cm, 1.2 * cm, 6.3 * cm, 1.8 * cm, 2.6 * cm, 1.9 * cm])
             table.setStyle(TableStyle([
                 ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
@@ -487,7 +508,7 @@ def generate_pdf(result: dict, filename: str = "relatorio_idt.pdf",
             row = []
             for col in range(num_cols):
                 idx = col * rows_per_col + i
-                row.append(mun_list[idx] if idx < len(mun_list) else "")
+                row.append(cell_text(mun_list[idx]) if idx < len(mun_list) else "")
             grid_data.append(row)
         if grid_data:
             mun_table = Table(grid_data, colWidths=[5.2 * cm] * num_cols)
@@ -547,9 +568,11 @@ def generate_pdf(result: dict, filename: str = "relatorio_idt.pdf",
         story.append(Spacer(1, 0.3 * cm))
         cfop_rows = []
         for alerta in cfops['alertas'][:15]:
-            msg = alerta.get('Mensagem', '')
-            msg = msg[:55] + '...' if len(msg) > 55 else msg
-            cfop_rows.append([alerta.get('CFOP', ''), alerta.get('Tipo', ''), msg])
+            cfop_rows.append([
+                cell_text(alerta.get('CFOP', '')),
+                cell_text(alerta.get('Tipo', '')),
+                cell_text(alerta.get('Mensagem', '')),
+            ])
         cfop_table = Table(cfop_rows, colWidths=[2 * cm, 3 * cm, 10.5 * cm])
         cfop_table.setStyle(TableStyle([
             ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
@@ -713,7 +736,6 @@ def generate_pdf(result: dict, filename: str = "relatorio_idt.pdf",
         rows = []
         for item in items:
             desc = item.get('Descricao', '')
-            desc = desc[:40] + '...' if len(desc) > 40 else desc
             cfop_val = item.get('CFOP', '') or '—'
             cfop_status = cfop_standard_status(item.get('CFOP'), non_standard_cfops)
             cov = item.get('Cobertura', '')
